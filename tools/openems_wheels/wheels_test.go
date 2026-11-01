@@ -46,7 +46,8 @@ func TestCommand(t *testing.T) {
 // The Python build tools and the C++ libraries are pinned to versions.
 func TestScriptPinsVersions(t *testing.T) {
 	for _, want := range []string{"cmake==", "cython==", "setuptools==", "numpy==",
-		"hdf5-devel-1.10.5", "boost-devel-1.66.0", "tinyxml-devel-2.6.2", "SOURCE_DATE_EPOCH="} {
+		"hdf5-devel-1.10.5", "libaec-devel-1.0.2", "boost-devel-1.66.0", "tinyxml-devel-2.6.2",
+		"zlib-devel-1.2.11", "SOURCE_DATE_EPOCH="} {
 		if !strings.Contains(BuildScript, want) {
 			t.Errorf("build.sh lacks %q", want)
 		}

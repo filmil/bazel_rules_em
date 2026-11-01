@@ -31,6 +31,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "openems_wheels: --out is required")
 		os.Exit(2)
 	}
+	if *jobs < 1 {
+		fmt.Fprintln(os.Stderr, "openems_wheels: --jobs must be 1 or more")
+		os.Exit(2)
+	}
 	abs, err := filepath.Abs(*out)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "openems_wheels:", err)
@@ -41,6 +45,11 @@ func main() {
 		fmt.Println(strings.Join(cmd, " "))
 		fmt.Print(wheels.BuildScript)
 		return
+	}
+	// An old wheel left in --out would end up in SHA256SUMS.
+	if entries, err := os.ReadDir(abs); err == nil && len(entries) > 0 {
+		fmt.Fprintf(os.Stderr, "openems_wheels: --out %s is not empty\n", abs)
+		os.Exit(2)
 	}
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		fmt.Fprintln(os.Stderr, "openems_wheels:", err)
