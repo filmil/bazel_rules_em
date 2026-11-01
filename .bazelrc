@@ -22,5 +22,13 @@ build --sandbox_default_allow_network=false
 common --incompatible_enable_proto_toolchain_resolution
 common --@protobuf//bazel/toolchains:prefer_prebuilt_protoc
 
+# Targets that run the FDTD solver are tagged "fdtd" (AGENTS.md): they are
+# slow, so the default build and test leave them out. `--config=fdtd`
+# builds and tests only them; CI runs it in a job of its own.
+build --build_tag_filters=-fdtd
+test --test_tag_filters=-fdtd
+build:fdtd --build_tag_filters=fdtd
+test:fdtd --test_tag_filters=fdtd
+
 # Add your local user settings to file `user.bazelrc`.
 try-import %workspace%/user.bazelrc
