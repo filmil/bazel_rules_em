@@ -6,6 +6,7 @@
 //
 //	bazel run //tools:openems_wheels -- --out=/tmp/oe-wheels
 //
+// A relative --out is taken from the directory bazel run was started in.
 // It is not part of any build: its output is checked against
 // tools/mirror/manifest.json and uploaded as a mirror release. With
 // --dry_run it prints the podman command and the script instead.
@@ -35,10 +36,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, "openems_wheels: --jobs must be 1 or more")
 		os.Exit(2)
 	}
-	abs, err := filepath.Abs(*out)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "openems_wheels:", err)
-		os.Exit(2)
+	// bazel run starts the tool in its runfiles; a relative --out means the
+	// directory bazel run was started in.
+	abs := *out
+	if !filepath.IsAbs(abs) {
+		wd := os.Getenv("BUILD_WORKING_DIRECTORY")
+		if wd == "" {
+			fmt.Fprintf(os.Stderr, "openems_wheels: --out %q is relative and BUILD_WORKING_DIRECTORY is not set; give an absolute path\n", abs)
+			os.Exit(2)
+		}
+		abs = filepath.Join(wd, abs)
 	}
 	cmd := wheels.Command(abs, *jobs)
 	if *dry {
