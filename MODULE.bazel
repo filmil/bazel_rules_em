@@ -42,8 +42,12 @@ use_repo(pip, "em_pip")
 
 register_toolchains(
     "//em/toolchains:helpers",
-    # Last, so it is picked only off Linux x86_64 (spec P1).
+    # The openEMS runner and its stub twin (issue #1).
+    "//em/toolchains:openems",
+    "//em/toolchains:openems_stub",
+    # Last, so they are picked only off Linux x86_64 (spec P1).
     "//em/toolchains:unsupported",
+    "//em/toolchains:openems_unsupported",
 )
 
 # The demonstration tools of the swap test template
