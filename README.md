@@ -23,17 +23,40 @@ Only Linux x86_64 hosts are supported.
 
 ## Status
 
-This is the scaffold: the module, its helpers and tests, and its CI and
-release workflows. The openEMS toolchain is next. After it come
+The scaffold and the openEMS toolchain are here. Next come
 `kicad_em_model`, `kicad_em_sim` and `kicad_em_test`, one pull request each;
 https://github.com/filmil/bazel_rules_em/issues/1 has the plan.
 
-What works now are the test rules every hdlf module shares:
+What works now:
 
+* **The openEMS toolchain** (`@hdlf_rules_em//em:toolchain_type`), with one
+  tool, `openems`: a runner that solves a simulation script with openEMS
+  d686f1d and CSXCAD 626b99f on CPython 3.12. It always runs openEMS's
+  multithreaded engine with a fixed thread count, and removes the time
+  stamps openEMS writes into its output, so two runs give the same bytes.
+  The EM rules will use it; there is no public rule for it yet.
 * `determinism_test` builds a target twice and fails if any output
   differs;
 * `swap_test` builds targets with every tool swapped for a stub, and fails
   if any output was made without a toolchain tool.
+
+### The openEMS wheels
+
+PyPI has no CSXCAD or openEMS, and no Linux distribution ships the
+post-VTK commits. So their Python wheels are built once, by
+`bazel run //tools:openems_wheels -- --out=DIR`, in a manylinux_2_28
+container pinned by digest (with podman, on the operator's machine), and
+mirrored as the release `mirror-openems-d686f1d` of this repository,
+together with the three source tarballs they are built from and the
+licences of everything inside them. `requirements_lock.txt` pins each wheel
+by its sha256. The wheels need glibc 2.28 or later on the host, as the
+Python interpreter does.
+
+### Slow tests
+
+A test that runs the solver is `size = "large"` and tagged `fdtd`.
+`bazel test //...` leaves those out; `bazel test --config=fdtd //...` runs
+only them, and CI runs that in a job of its own.
 
 ## Using it
 
@@ -72,6 +95,7 @@ After changing a `.bzl` file, regenerate the documentation with
 `bazel run //docs:update_docs`.
 Format with `bazel run //tools:buildifier`, and check hermeticity with
 `bazel run //tools/lint`.
+The solver tests run with `bazel test --config=fdtd //...`.
 
 ## Releasing
 
@@ -98,3 +122,13 @@ versions, sources and licenses.
 | What | Version | Source | License |
 |---|---|---|---|
 | Go SDK (builds the helpers: the launcher, the swap test's stub and checker, the determinism comparer) | as rules_go 0.64.2 picks it | [go.dev/dl](https://go.dev/dl/), fetched by rules_go | BSD-3-Clause |
+| CPython (runs the openEMS runner) | 3.12, as rules_python 2.4.6 picks it | [python-build-standalone](https://github.com/astral-sh/python-build-standalone), fetched by rules_python | PSF-2.0 |
+| openEMS (the solver, in the `openems` wheel) | commit d686f1d, as 0.37.0.post20261024 | [thliebig/openEMS](https://github.com/thliebig/openEMS); wheel built by `//tools:openems_wheels`, mirrored as `mirror-openems-d686f1d` | GPL-3.0-or-later |
+| CSXCAD (the geometry, in the `csxcad` wheel, and inside `openems`) | commit 626b99f, as 0.7.0.post20261021 | [thliebig/CSXCAD](https://github.com/thliebig/CSXCAD); as above | LGPL-3.0-or-later |
+| fparser (inside both wheels) | commit 4b9c845 | [thliebig/fparser](https://github.com/thliebig/fparser); as above | LGPL-3.0-or-later |
+| HDF5, libaec, TinyXML, Boost (inside the wheels, from AlmaLinux 8 and EPEL) | 1.10.5, 1.0.2, 2.6.2, 1.66.0 | the manylinux_2_28 image's package repositories | BSD-3-Clause-style (HDF5), BSD-2-Clause, Zlib, BSL-1.0 |
+| numpy, h5py, matplotlib and their dependencies | as `requirements_lock.txt` pins them | PyPI | BSD-3-Clause (numpy, h5py), matplotlib's PSF-based licence, and theirs |
+
+The licence texts of what the two wheels hold are in
+`openems-wheels-licenses.tar`, an asset of the mirror release, beside the
+exact sources the wheels are built from.
