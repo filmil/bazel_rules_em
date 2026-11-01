@@ -58,8 +58,9 @@ the change.
 * **Linux x86_64 only** in v1.
 * **Python only where openEMS needs it.** openEMS's bindings and the
   post-processing that uses them are Python; every other helper is Go.
-* **FDTD tests are slow.** A target or test that runs the solver gets
-  the tag `fdtd` (a test also `size = "large"`). `.bazelrc` keeps them out
+* **FDTD tests are slow.** A target that runs the solver, and every test
+  that depends on one, gets the tag `fdtd`; a test whose own run solves
+  is also `size = "large"`. `.bazelrc` keeps them out
   of the default `bazel build //...` and `bazel test //...`;
   `bazel test --config=fdtd //...` runs only them, and the CI job `fdtd`
   runs that.
