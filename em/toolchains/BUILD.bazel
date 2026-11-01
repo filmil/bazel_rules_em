@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load("//em/private:toolchains.bzl", "helpers_toolchain", "unsupported_platform_toolchain")
+load("//em/private:toolchains.bzl", "helpers_toolchain", "tool_toolchain", "unsupported_platform_toolchain")
 
 # --@hdlf_rules_em//em/toolchains:use_stub swaps every tool for the stub.
 # swap_test sets it with a transition. A tool toolchain honors it by
@@ -58,4 +58,48 @@ toolchain(
     name = "unsupported",
     toolchain = ":unsupported_impl",
     toolchain_type = "//em:helpers_toolchain_type",
+)
+
+# The openEMS toolchain (issue #1): openEMS d686f1d and CSXCAD 626b99f, as
+# wheels built once and mirrored (tools/openems_wheels, tools/mirror), on
+# CPython 3.12. Rules run its runner by the tool name "openems".
+tool_toolchain(
+    name = "openems_impl",
+    tools = {"//em/private/runner": "openems"},
+)
+
+# Its swap_test twin: the stub in place of the runner.
+tool_toolchain(
+    name = "openems_stub_impl",
+    tools = {"//em/private/stub": "openems"},
+)
+
+toolchain(
+    name = "openems",
+    exec_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    target_settings = [":stub_off"],
+    toolchain = ":openems_impl",
+    toolchain_type = "//em:toolchain_type",
+)
+
+toolchain(
+    name = "openems_stub",
+    exec_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    target_settings = [":stub_on"],
+    toolchain = ":openems_stub_impl",
+    toolchain_type = "//em:toolchain_type",
+)
+
+# Off Linux x86_64, the same message as the helpers' (spec P1), rather
+# than a toolchain resolution error. MODULE.bazel registers it last.
+toolchain(
+    name = "openems_unsupported",
+    toolchain = ":unsupported_impl",
+    toolchain_type = "//em:toolchain_type",
 )
