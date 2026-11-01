@@ -54,7 +54,8 @@ Python interpreter does.
 
 ### Slow tests
 
-A test that runs the solver is `size = "large"` and tagged `fdtd`.
+A target that runs the solver, and every test that depends on one, is
+tagged `fdtd`; a test whose own run solves is also `size = "large"`.
 `bazel test //...` leaves those out; `bazel test --config=fdtd //...` runs
 only them, and CI runs that in a job of its own.
 
