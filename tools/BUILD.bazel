@@ -2,6 +2,7 @@
 # Development tools. They use the module's dev dependencies, so they live
 # apart from the packages a user of the module loads.
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
 
 # bazel run //tools:buildifier
 buildifier(
@@ -19,4 +20,33 @@ buildifier(
     exclude_patterns = ["./tools/lint/testdata/*"],
     lint_mode = "warn",
     mode = "check",
+)
+
+# bazel run //tools:openems_wheels -- --out=DIR: builds the CSXCAD and
+# openEMS wheels in the pinned manylinux container (tools/openems_wheels).
+alias(
+    name = "openems_wheels",
+    actual = "//tools/openems_wheels:cmd",
+)
+
+# bazel run //tools:mirror: checks the mirrored wheels (tools/mirror).
+alias(
+    name = "mirror",
+    actual = "//tools/mirror",
+)
+
+# bazel run //tools:requirements.update: writes requirements_lock.txt from
+# requirements.in, binary wheels only, each with its hash.
+compile_pip_requirements(
+    name = "requirements",
+    src = "//:requirements.in",
+    extra_args = [
+        "--allow-unsafe",
+        "--pip-args=--only-binary=:all:",
+    ],
+    python_version = "3.12",
+    requirements_txt = "//:requirements_lock.txt",
+    # Its test (that the lock is current) fetches from PyPI, so it does not
+    # run with the other tests.
+    tags = ["manual"],
 )

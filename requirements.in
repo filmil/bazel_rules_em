@@ -1,0 +1,10 @@
+# The openEMS toolchain's Python packages (issue #1). Lock with
+# `bazel run //tools:requirements.update`; it writes requirements_lock.txt
+# with every wheel's hash. PyPI has no CSXCAD or openEMS; their wheels are
+# built once (tools/openems_wheels) and mirrored (tools/mirror/README.md).
+csxcad @ https://github.com/filmil/bazel_rules_em/releases/download/mirror-openems-d686f1d/csxcad-0.7.0.post20261021-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+openems @ https://github.com/filmil/bazel_rules_em/releases/download/mirror-openems-d686f1d/openems-0.37.0.post20261024-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+# Their runtime dependencies (CSXCAD's and openEMS's pyproject.toml).
+numpy
+h5py
+matplotlib

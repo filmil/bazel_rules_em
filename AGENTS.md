@@ -58,10 +58,17 @@ the change.
 * **Linux x86_64 only** in v1.
 * **Python only where openEMS needs it.** openEMS's bindings and the
   post-processing that uses them are Python; every other helper is Go.
-* **FDTD tests are slow.** A test that runs the solver gets
-  `size = "large"` and a tag that keeps it out of the default
-  `bazel test //...`; it runs in a CI job of its own. The tag and the job
-  arrive with the first simulation test.
+* **FDTD tests are slow.** A target that runs the solver, and every test
+  that depends on one, gets the tag `fdtd`; a test whose own run solves
+  is also `size = "large"`. `.bazelrc` keeps them out
+  of the default `bazel build //...` and `bazel test //...`;
+  `bazel test --config=fdtd //...` runs only them, and the CI job `fdtd`
+  runs that.
+* **The openEMS wheels are built, not downloaded from PyPI.** A new
+  openEMS or CSXCAD commit, or a change to `tools/openems_wheels`, is a
+  toolchain change (rule 7): the operator runs
+  `bazel run //tools:openems_wheels` twice, checks the two `SHA256SUMS`
+  agree, and uploads with `bazel run //tools:mirror`.
 * **Simulations are deterministic.** Run openEMS with a fixed engine and
   thread count (`engine='multithreaded'`, `numThreads=N`), never the
   defaults, which pick the fastest engine and use every core. Compare
