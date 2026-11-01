@@ -125,6 +125,47 @@ jobs:
       - name: Dependencies resolve from the filmil registry and the BCR
         run: bazel --ignore_all_rc_files mod graph --registry=https://raw.githubusercontent.com/filmil/bazel-registry/main --registry=https://bcr.bazel.build > /dev/null
 
+  # The tests that run the FDTD solver (tag "fdtd"; AGENTS.md), which the
+  # test job leaves out: they are slow. The same bare container.
+  fdtd:
+    runs-on: ubuntu-latest
+    container: buildpack-deps:bullseye-curl@sha256:7c8d79c31eb106cca055357456a2fa89b10fa20f254da6fe3eca937439696c62
+    steps:
+      - name: Install bazelisk
+        run: |
+          set -o errexit -o nounset -o pipefail
+          curl -fsSL -o /usr/local/bin/bazel \
+            "https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-linux-amd64"
+          echo "${BAZELISK_SHA256}  /usr/local/bin/bazel" | sha256sum -c -
+          chmod +x /usr/local/bin/bazel
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Point Bazel at the cached directories
+        run: |
+          printf 'common --repository_cache=%s\nbuild --disk_cache=%s\n' \
+            "${HOME}/.cache/bazel-repo" "${HOME}/.cache/bazel-disk" \
+            | tee user.bazelrc
+
+      - name: Compute the daily cache key
+        id: cachekey
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "${GITHUB_OUTPUT}"
+
+      - name: Cache Bazel downloads and outputs
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/bazel-repo
+            ~/.cache/bazel-disk
+            ~/.cache/bazelisk
+          key: fdtd-${{ steps.cachekey.outputs.day }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            fdtd-${{ steps.cachekey.outputs.day }}-
+
+      - name: Solver tests
+        run: bazel test --config=fdtd //...
+
   integration:
     runs-on: ubuntu-latest
     container: buildpack-deps:bullseye-curl@sha256:7c8d79c31eb106cca055357456a2fa89b10fa20f254da6fe3eca937439696c62
