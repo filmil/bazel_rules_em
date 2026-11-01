@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+# The build of the CSXCAD and openEMS wheels (issue #1), which the operator
+# runs by hand: bazel run //tools:openems_wheels -- --out=DIR. It runs
+# build.sh in the pinned manylinux container with podman. Its output is
+# checked against tools/mirror/manifest.json and uploaded as a mirror
+# release; no build runs it.
+
+go_library(
+    name = "openems_wheels",
+    srcs = ["wheels.go"],
+    embedsrcs = ["build.sh"],
+    importpath = "github.com/filmil/bazel_rules_em/tools/openems_wheels",
+    visibility = ["//visibility:private"],
+)
+
+go_test(
+    name = "openems_wheels_test",
+    size = "small",
+    srcs = ["wheels_test.go"],
+    embed = [":openems_wheels"],
+    pure = "on",
+)
+
+go_binary(
+    name = "cmd",
+    srcs = ["cmd/main.go"],
+    pure = "on",
+    visibility = ["//tools:__pkg__"],
+    deps = [":openems_wheels"],
+)

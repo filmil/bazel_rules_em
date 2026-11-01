@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+# The mirror of the CSXCAD and openEMS wheels, which PyPI does not have
+# (issue #1, spec "Prebuilts"), with their sources and licences; ported
+# from rules_netlist.
+#
+#   bazel run //tools:mirror    checks every upstream file of manifest.json
+#
+# README.md says how the wheels are built; the operator uploads them with
+# --dry_run=false --built_dir=DIR (see cmd/main.go). The test runs the
+# checks against a local server, never the network, and keeps
+# manifest.json equal to what requirements_lock.txt fetches.
+
+go_library(
+    name = "mirror_lib",
+    srcs = ["mirror.go"],
+    importpath = "github.com/filmil/bazel_rules_em/tools/mirror",
+    visibility = ["//visibility:private"],
+)
+
+go_test(
+    name = "mirror_test",
+    size = "small",
+    srcs = ["mirror_test.go"],
+    data = [
+        "manifest.json",
+        "//:requirements_lock.txt",
+    ],
+    embed = [":mirror_lib"],
+    pure = "on",
+    deps = ["@rules_go//go/runfiles"],
+)
+
+go_binary(
+    name = "mirror",
+    srcs = ["cmd/main.go"],
+    pure = "on",
+    visibility = ["//tools:__pkg__"],
+    deps = [":mirror_lib"],
+)
