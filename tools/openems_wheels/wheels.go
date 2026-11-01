@@ -17,9 +17,9 @@ const Image = "quay.io/pypa/manylinux_2_28_x86_64@sha256:43f7ce12d79ed98b6dbfa32
 
 // Source is one upstream source tarball.
 type Source struct {
-	Name    string // FPARSER, CSXCAD or OPENEMS
-	URL     string
-	SHA256  string
+	Name   string // FPARSER, CSXCAD or OPENEMS
+	URL    string
+	SHA256 string
 	// Version is the Python package's version, "" when there is none: the
 	// upstream release it follows, ".post", and the commit's date. A local
 	// version ("+g626b99f") would put a "+" in the wheel's name, which a

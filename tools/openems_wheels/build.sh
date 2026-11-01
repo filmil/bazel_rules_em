@@ -21,12 +21,17 @@ JOBS=${JOBS:-4}
 PY=/opt/python/cp312-cp312/bin/python
 
 # The C++ dependencies, at the versions the wheels were first built with.
+# The libraries that end up in the wheels are pinned here; auditwheel
+# comes with the image, which is pinned by digest. A package that a mirror
+# drops or changes makes the rebuilt wheels differ from the manifest, and
+# `bazel run //tools:mirror -- --built_dir=DIR` says so.
 dnf install -y -q epel-release
 dnf install -y -q \
   hdf5-devel-1.10.5-4.el8 \
+  libaec-devel-1.0.2-3.el8 \
   tinyxml-devel-2.6.2-28.el8 \
   boost-devel-1.66.0-13.el8 \
-  zlib-devel
+  zlib-devel-1.2.11-25.el8
 
 # The Python build tools, pinned.
 $PY -m pip install -q \
