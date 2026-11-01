@@ -13,8 +13,9 @@ script writes goes under out_dir.
 
 openEMS writes the wall-clock time into the first line of each probe file
 (`% time-domain ... by openEMS d686f1d @Sun Nov  1 09:38:27 2026`).
-After the script returns, the runner removes that time from every such
-line under out_dir; nothing else is changed.
+After the script returns, the runner removes that time from the first
+line of every file under out_dir where it is; nothing else is read or
+changed, so binary outputs such as HDF5 field dumps stay as they are.
 """
 
 import argparse
@@ -26,8 +27,8 @@ import sys
 
 ENGINE = "multithreaded"
 
-# "% <anything> by openEMS <version> @<ctime>" on a header line.
-_STAMP = re.compile(rb"^(%[^\n]* by openEMS \S+) @[^\n]*$", re.M)
+# "% <anything> by openEMS <version> @<ctime>": a probe file's first line.
+_STAMP = re.compile(rb"^(%[^\n]* by openEMS \S+) @[^\n]*$")
 
 
 class RunnerError(Exception):
@@ -35,8 +36,9 @@ class RunnerError(Exception):
 
 
 def strip_times(data):
-    """data with the openEMS time stamps removed from its header lines."""
-    return _STAMP.sub(rb"\1", data)
+    """data with the openEMS time stamp removed from its first line."""
+    first, nl, rest = data.partition(b"\n")
+    return _STAMP.sub(rb"\1", first) + nl + rest
 
 
 def normalize_tree(root):
@@ -46,11 +48,13 @@ def normalize_tree(root):
         for name in sorted(filenames):
             path = os.path.join(dirpath, name)
             with open(path, "rb") as f:
+                first = f.readline(4096)
+            if not first.startswith(b"%") or not _STAMP.match(first.rstrip(b"\n")):
+                continue
+            with open(path, "rb") as f:
                 data = f.read()
-            new = strip_times(data)
-            if new != data:
-                with open(path, "wb") as f:
-                    f.write(new)
+            with open(path, "wb") as f:
+                f.write(strip_times(data))
 
 
 def make_run(threads):
@@ -63,8 +67,10 @@ def make_run(threads):
 
 
 def load_script(path):
+    if not os.path.isfile(path):
+        raise RunnerError("%s: no such file" % path)
     spec = importlib.util.spec_from_file_location("em_simulation", path)
-    if spec is None:
+    if spec is None or spec.loader is None:
         raise RunnerError("%s: not a Python file" % path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -90,6 +96,8 @@ def main(argv):
     os.makedirs(out, exist_ok=True)
     try:
         params = json.loads(a.params)
+        if not isinstance(params, dict):
+            raise RunnerError("--params must be a JSON object, not %s" % type(params).__name__)
         load_script(script).simulate(out, params, make_run(a.threads))
     except (RunnerError, ValueError) as e:
         print("runner: %s" % e, file=sys.stderr)
