@@ -1,0 +1,54 @@
+{
+  "repo": "filmil/bazel_rules_em",
+  "releases": [
+    {
+      "tag": "mirror-openems-d686f1d",
+      "title": "openEMS d686f1d and CSXCAD 626b99f wheels",
+      "notes": "Wheels of CSXCAD 626b99f and openEMS d686f1d for CPython 3.12, manylinux_2_28 x86_64, for rules_em's openEMS toolchain (https://github.com/filmil/bazel_rules_em/issues/1). PyPI has neither. Built by tools/openems_wheels (bazel run //tools:openems_wheels) in quay.io/pypa/manylinux_2_28_x86_64 pinned by digest; two builds give the same bytes. csxcad from https://github.com/thliebig/CSXCAD/archive/626b99f2f4d681cb012516b6522b7bc7068ce39c.tar.gz (sha256 5b31a23846df1a8c7abcb6cf11c2957c14fb29dc9d1cdb01fd8549931eab82e7); openems from https://github.com/thliebig/openEMS/archive/d686f1dfbb8900a748eacf1925e091ee32d1995c.tar.gz (sha256 e42037d8fae0fc6f36072fb8dfff98c17f0d37c7023c7d107ab144c0f9e9672b); both also from fparser https://github.com/thliebig/fparser/archive/4b9c845b449b520c4b8c5f23c74cd04820084f81.tar.gz (sha256 07f320b67df0f80a13766b0a74b2372edcba465ee33366bc57962bdfb76c0d1b). The three source tarballs are assets of this release as downloaded. openems-wheels-licenses.tar holds the licences of everything in the wheels: openEMS GPL-3.0-or-later; CSXCAD and fparser LGPL-3.0-or-later; HDF5 (BSD-style), libaec (BSD-2-Clause), Boost (BSL-1.0), TinyXML and zlib (Zlib).",
+      "assets": [
+        {
+          "name": "csxcad-0.7.0.post20261021-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "d863c0b39b8b89c02b4a008ecd786e845c3d7012be53aa1b6e424689a9fa76d3",
+          "built": {
+            "source": "https://github.com/thliebig/CSXCAD/archive/626b99f2f4d681cb012516b6522b7bc7068ce39c.tar.gz",
+            "source_sha256": "5b31a23846df1a8c7abcb6cf11c2957c14fb29dc9d1cdb01fd8549931eab82e7",
+            "script": "tools/openems_wheels (bazel run //tools:openems_wheels)"
+          }
+        },
+        {
+          "name": "openems-0.37.0.post20261024-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "06eb45baf0d29651470fb06cbea31dc9b0aa9221e6b97cbeee1b8a424746a288",
+          "built": {
+            "source": "https://github.com/thliebig/openEMS/archive/d686f1dfbb8900a748eacf1925e091ee32d1995c.tar.gz",
+            "source_sha256": "e42037d8fae0fc6f36072fb8dfff98c17f0d37c7023c7d107ab144c0f9e9672b",
+            "script": "tools/openems_wheels (bazel run //tools:openems_wheels)"
+          }
+        },
+        {
+          "name": "openems-wheels-licenses.tar",
+          "sha256": "56d6758a0bff7db2a6f6d8a73f847d22a8e8abaf8a3ca2bb307d323aac34896e",
+          "built": {
+            "source": "https://github.com/thliebig/openEMS/archive/d686f1dfbb8900a748eacf1925e091ee32d1995c.tar.gz",
+            "source_sha256": "e42037d8fae0fc6f36072fb8dfff98c17f0d37c7023c7d107ab144c0f9e9672b",
+            "script": "tools/openems_wheels (bazel run //tools:openems_wheels)"
+          }
+        },
+        {
+          "name": "openems-src.tar.gz",
+          "sha256": "e42037d8fae0fc6f36072fb8dfff98c17f0d37c7023c7d107ab144c0f9e9672b",
+          "url": "https://github.com/thliebig/openEMS/archive/d686f1dfbb8900a748eacf1925e091ee32d1995c.tar.gz"
+        },
+        {
+          "name": "csxcad-src.tar.gz",
+          "sha256": "5b31a23846df1a8c7abcb6cf11c2957c14fb29dc9d1cdb01fd8549931eab82e7",
+          "url": "https://github.com/thliebig/CSXCAD/archive/626b99f2f4d681cb012516b6522b7bc7068ce39c.tar.gz"
+        },
+        {
+          "name": "fparser-src.tar.gz",
+          "sha256": "07f320b67df0f80a13766b0a74b2372edcba465ee33366bc57962bdfb76c0d1b",
+          "url": "https://github.com/thliebig/fparser/archive/4b9c845b449b520c4b8c5f23c74cd04820084f81.tar.gz"
+        }
+      ]
+    }
+  ]
+}
