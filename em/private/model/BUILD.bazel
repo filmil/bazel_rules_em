@@ -34,6 +34,8 @@ py_test(
     python_version = "3.12",
     deps = [
         ":sim_lib",
+        "@em_pip//csxcad",
+        "@em_pip//matplotlib",
         "@em_pip//numpy",
     ],
 )

@@ -93,13 +93,15 @@ It writes a directory `<name>/`:
 * `s_params.png`: |S| in dB of every pair;
 * `impedance.png`: each port's input impedance, real and imaginary;
 * `tdr.png`: each port's TDR impedance, from its S11: the reflection of a
-  step whose rise time is about 0.35 / `f_stop`;
+  step whose rise time, about 1 / `f_stop`, the report gives, over the time
+  each run simulated;
 * `report.md`: the setup, the mesh, S at the band's ends and middle, and
   each port's lowest and highest TDR impedance.
 
-Each port is a lumped port of `z0` from its pad down to the next copper
-layer (up, for the bottom layer), so the copper there is the reference:
-model it, such as `GND`. Every port is excited once, in its own run, so N
+Each port is a lumped port of `z0` from its pad to the nearest copper layer,
+going away from the pad's layer, with modelled copper under the pad: that
+copper is the reference, so model it, such as `GND`. If no layer has, the
+port ends on the adjacent layer, and the report says so. Every port is excited once, in its own run, so N
 ports take N runs. The copper is drawn as sheets of no thickness, so the
 mesh needs no cells as thin as the copper. The mesh has lines at each
 copper shape's edges and centre, and is at most `mesh_mm`. `air_mm` of air
@@ -138,8 +140,9 @@ its mesh and `steps` small in tests.
             default = "0.25",
         ),
         "air_mm": attr.string(
-            doc = "The air around the board, in mm: at least 8 `mesh_mm`, for the absorbing boundary.",
-            default = "2",
+            doc = "The air around the board, in mm: at least 8 `mesh_mm`, the absorbing " +
+                  "boundary's cells, and better 16, so the boundary is clear of the board's fields.",
+            default = "4",
         ),
         "z0": attr.string(
             doc = "The ports' reference impedance, in ohm.",

@@ -27,6 +27,8 @@ kicad_em_model(
 
 kicad_em_sim(
     name = "line_sim",
+    # 12 cells of air: 4 clear, 8 the boundary's, to keep the test short.
+    air_mm = "3",
     f_start = "100MHz",
     f_stop = "6GHz",
     model = ":line",
@@ -96,4 +98,32 @@ fails_test(
     size = "small",
     message = "steps 10: want 100 or more",
     target_under_test = ":few_steps",
+)
+
+kicad_em_sim(
+    name = "one_point",
+    model = ":line",
+    points = 1,
+    tags = ["manual"],
+)
+
+fails_test(
+    name = "one_point_test",
+    size = "small",
+    message = "points 1: want 2 or more",
+    target_under_test = ":one_point",
+)
+
+kicad_em_sim(
+    name = "no_threads",
+    model = ":line",
+    tags = ["manual"],
+    threads = 0,
+)
+
+fails_test(
+    name = "no_threads_test",
+    size = "small",
+    message = "threads 0: want 1 or more",
+    target_under_test = ":no_threads",
 )

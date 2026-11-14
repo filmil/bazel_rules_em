@@ -125,13 +125,15 @@ It writes a directory `<name>/`:
 * `s_params.png`: |S| in dB of every pair;
 * `impedance.png`: each port's input impedance, real and imaginary;
 * `tdr.png`: each port's TDR impedance, from its S11: the reflection of a
-  step whose rise time is about 0.35 / `f_stop`;
+  step whose rise time, about 1 / `f_stop`, the report gives, over the time
+  each run simulated;
 * `report.md`: the setup, the mesh, S at the band's ends and middle, and
   each port's lowest and highest TDR impedance.
 
-Each port is a lumped port of `z0` from its pad down to the next copper
-layer (up, for the bottom layer), so the copper there is the reference:
-model it, such as `GND`. Every port is excited once, in its own run, so N
+Each port is a lumped port of `z0` from its pad to the nearest copper layer,
+going away from the pad's layer, with modelled copper under the pad: that
+copper is the reference, so model it, such as `GND`. If no layer has, the
+port ends on the adjacent layer, and the report says so. Every port is excited once, in its own run, so N
 ports take N runs. The copper is drawn as sheets of no thickness, so the
 mesh needs no cells as thin as the copper. The mesh has lines at each
 copper shape's edges and centre, and is at most `mesh_mm`. `air_mm` of air
@@ -153,7 +155,7 @@ its mesh and `steps` small in tests.
 | Name  | Description | Type | Mandatory | Default |
 | :------------- | :------------- | :------------- | :------------- | :------------- |
 | <a id="kicad_em_sim-name"></a>name |  A unique name for this target.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
-| <a id="kicad_em_sim-air_mm"></a>air_mm |  The air around the board, in mm: at least 8 `mesh_mm`, for the absorbing boundary.   | String | optional |  `"2"`  |
+| <a id="kicad_em_sim-air_mm"></a>air_mm |  The air around the board, in mm: at least 8 `mesh_mm`, the absorbing boundary's cells, and better 16, so the boundary is clear of the board's fields.   | String | optional |  `"4"`  |
 | <a id="kicad_em_sim-f_start"></a>f_start |  The band's start: a number and Hz, kHz, MHz or GHz.   | String | optional |  `"100MHz"`  |
 | <a id="kicad_em_sim-f_stop"></a>f_stop |  The band's end, which also sets the excitation's width and the TDR's rise time.   | String | optional |  `"6GHz"`  |
 | <a id="kicad_em_sim-mesh_mm"></a>mesh_mm |  The largest mesh cell, in mm. Finer is slower and closer.   | String | optional |  `"0.25"`  |
