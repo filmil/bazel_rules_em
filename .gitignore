@@ -3,3 +3,5 @@
 user.bazelrc
 MODULE.bazel.lock
 /integration/MODULE.bazel.lock
+__pycache__/
+*.pyc

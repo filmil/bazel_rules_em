@@ -26,17 +26,19 @@ def _helpers_toolchain_impl(ctx):
         compare = ctx.attr.compare[DefaultInfo],
     ), tools = {
         # Tools that rules run in actions through run_tool, built for the
-        # execution platform. None yet: a checker of this module's own
-        # joins here when a rule needs one.
+        # execution platform: kicad_em_model's board reader (issue #1).
+        "pcbmodel": ctx.attr.pcbmodel[DefaultInfo].files_to_run,
     })]
 
 helpers_toolchain = rule(
     implementation = _helpers_toolchain_impl,
-    doc = "The helpers toolchain: the launcher, the swap checker and the determinism comparer.",
+    doc = "The helpers toolchain: the launcher, the swap checker, the determinism comparer " +
+          "and kicad_em_model's board reader.",
     attrs = {
         "launcher": attr.label(mandatory = True, executable = True, cfg = "exec"),
         "swapcheck": attr.label(mandatory = True, executable = True, cfg = "target"),
         "compare": attr.label(mandatory = True, executable = True, cfg = "target"),
+        "pcbmodel": attr.label(mandatory = True, executable = True, cfg = "exec"),
     },
 )
 

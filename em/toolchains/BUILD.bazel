@@ -28,6 +28,7 @@ helpers_toolchain(
     name = "helpers_impl",
     compare = "//em/private/detcompare",
     launcher = "//em/private/launcher",
+    pcbmodel = "//em/private/pcbmodel:cmd",
     swapcheck = "//em/private/swapcheck",
 )
 

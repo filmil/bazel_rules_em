@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# kicad_em_model's CSXCAD script (issue #1, step 2): model.json to
+# model.xml, run by the openEMS runner, which solves nothing here.
+exports_files(
+    ["csx.py"],
+    visibility = ["//visibility:public"],
+)

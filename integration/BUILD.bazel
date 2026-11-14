@@ -3,12 +3,13 @@
 # The example consumer. It uses only the public API of hdlf_rules_em, as a
 # user of the published module would. The EM rules arrive per
 # https://github.com/filmil/bazel_rules_em/issues/1; until then, this checks
-# that the public packages load and build, and that the module resolved is
-# the one this consumer was written for.
+# that the public packages load and build, that the module resolved is
+# the one this consumer was written for, and that kicad_em_model models a
+# board as a user's build would.
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("@hdlf_rules_em//em:defs.bzl", "RULES_EM_API_VERSION")
+load("@hdlf_rules_em//em:defs.bzl", "RULES_EM_API_VERSION", "determinism_test", "kicad_em_model")
 
 # The public packages load and build: the rules, and the root package
 # with the --@hdlf_rules_em//:tools flag that every user's build reads.
@@ -38,4 +39,26 @@ diff_test(
     size = "small",
     file1 = ":api_version",
     file2 = "expected_api_version.txt",
+)
+
+# A pair of tracks over a ground pour, written by hand in KiCad 9's form.
+kicad_em_model(
+    name = "pair_model",
+    dielectrics = ["1.51mm 4.5 0.02"],
+    nets = [
+        "D+",
+        "D-",
+        "GND",
+    ],
+    pcb = "pair.kicad_pcb",
+    ports = {
+        "P1": "J1.1",
+        "P2": "J1.2",
+    },
+)
+
+determinism_test(
+    name = "pair_model_determinism_test",
+    size = "small",
+    target = ":pair_model",
 )
