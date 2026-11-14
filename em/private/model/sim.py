@@ -371,10 +371,13 @@ def simulate(out_dir, params, run):
         t, z = tdr(S11_tdr[p], tdr_df, z0)
         # Up to the time the run simulated: past it, nothing was solved.
         keep = t <= t_end
-        tdr_series.append(("Z %s" % p, t[keep] * 1e12, z[keep]))
+        # An open end reads as thousands of ohm; the plot stops at 10 z0,
+        # so the rest stays readable, and the report says "open".
+        tdr_series.append(("Z %s" % p, t[keep] * 1e12, np.minimum(z[keep], 10 * z0)))
         tdr_ranges[p] = (float(z[keep].min()), float(z[keep].max()))
     rise = rise_time(tdr_n, tdr_df)
-    plot(os.path.join(out_dir, "tdr.png"), "TDR impedance (rise time %.0f ps, 10-90 %%)" % (rise * 1e12),
+    plot(os.path.join(out_dir, "tdr.png"),
+         "TDR impedance (rise time %.0f ps, 10-90 %%; shown up to %g ohm)" % (rise * 1e12, 10 * z0),
          "time (ps)", "Z (ohm)", tdr_series)
 
     with open(os.path.join(out_dir, "report.md"), "w") as f:
@@ -403,5 +406,7 @@ def simulate(out_dir, params, run):
                 w("| S%s,%s | " % (names[a], names[b]) + " | ".join("%.2f" % db(S[a, b])[k] for k in picks) + " |\n")
         w("\n## TDR impedance\n\n| Port | min (ohm) | max (ohm) |\n|---|---:|---:|\n")
         for p in names:
-            w("| %s | %.1f | %.1f |\n" % (p, tdr_ranges[p][0], tdr_ranges[p][1]))
+            lo, hi = tdr_ranges[p]
+            high = "%.1f" % hi if hi < 10 * z0 else "over %g (open)" % (10 * z0)
+            w("| %s | %.1f | %s |\n" % (p, lo, high))
         w("\n![S-parameters](s_params.png)\n\n![Input impedance](impedance.png)\n\n![TDR](tdr.png)\n")
