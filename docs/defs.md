@@ -126,7 +126,11 @@ It writes a directory `<name>/`:
 * `impedance.png`: each port's input impedance, real and imaginary;
 * `tdr.png`: each port's TDR impedance, from its S11: the reflection of a
   step whose rise time, about 1 / `f_stop`, the report gives, over the time
-  each run simulated;
+  each run simulated. A feature whose delay is not well above that rise
+  time reads closer to the ports' impedance than it is: a 16 mm line of
+  about 145 ohm reads about 115 ohm with a 161 ps step, and a 30 mm one of
+  about 128 ohm reads 125 ohm with a 97 ps step. Raise `f_stop` to see
+  shorter features;
 * `report.md`: the setup, the mesh, S at the band's ends and middle, and
   each port's lowest and highest TDR impedance.
 
