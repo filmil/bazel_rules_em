@@ -1,0 +1,15 @@
+{
+ "nets": [
+  "SIG",
+  "GND",
+  "FLOAT"
+ ],
+ "ports": {
+  "P1": "J1.1",
+  "P2": "J2.1"
+ },
+ "dielectrics": [
+  "1.53mm 4.3 0.02"
+ ],
+ "note": "3.0 mm trace with a coplanar pour 0.3 mm away on both sides, the pour not connected to anything (floating); solid GND below, 2-layer"
+}
