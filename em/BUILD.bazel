@@ -15,6 +15,13 @@ toolchain_type(
     visibility = ["//visibility:public"],
 )
 
+# The openEMS toolchain (issue #1): the runner, which solves a simulation
+# script with openEMS and CSXCAD. Its one tool is named "openems".
+toolchain_type(
+    name = "toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
 exports_files(
     ["defs.bzl"],
     visibility = ["//docs:__pkg__"],

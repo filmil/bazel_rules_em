@@ -1,0 +1,48 @@
+load("@rules_python//python:py_test.bzl", "py_test")
+
+# SPDX-License-Identifier: Apache-2.0
+#
+# The openEMS toolchain's smoke test (issue #1): a short microstrip line,
+# solved twice, must give the same bytes. It runs the solver, so it is
+# size "large" and tagged "fdtd": .bazelrc keeps it out of the default
+# `bazel test //...`, and CI runs it in a job of its own
+# (`bazel test --config=fdtd //...`).
+load("//em:defs.bzl", "determinism_test", "swap_test")
+load(":smoke.bzl", "openems_run")
+
+openems_run(
+    name = "microstrip",
+    script = "microstrip.py",
+    tags = ["fdtd"],
+)
+
+determinism_test(
+    name = "microstrip_determinism_test",
+    size = "large",
+    tags = ["fdtd"],
+    target = ":microstrip",
+)
+
+# Every output of the run comes from the toolchain's tool. With the stub
+# in place of the runner, nothing is solved, so this is not "fdtd".
+swap_test(
+    name = "microstrip_swap_test",
+    size = "small",
+    targets = [":microstrip"],
+)
+
+# The runner removed openEMS's time stamps: determinism_test misses one
+# when both runs fall in the same second.
+py_test(
+    name = "microstrip_no_stamps_test",
+    size = "small",
+    srcs = ["no_stamps_test.py"],
+    args = ["$(rootpath :microstrip)"],
+    config_settings = {
+        "@rules_python//python/config_settings:bootstrap_impl": "script",
+    },
+    data = [":microstrip"],
+    main = "no_stamps_test.py",
+    python_version = "3.12",
+    tags = ["fdtd"],
+)

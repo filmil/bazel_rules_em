@@ -15,10 +15,39 @@ bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_go", version = "0.64.2")
 
 # The helpers toolchain, which every rule that runs a tool needs.
+# openEMS's Python bindings run on rules_python's hermetic CPython 3.12,
+# with wheels locked with their hashes in requirements_lock.txt (`bazel run
+# //tools:requirements.update` writes it from requirements.in). The CSXCAD
+# and openEMS wheels are built once and mirrored as release assets
+# (tools/openems_wheels, tools/mirror); the rest come from PyPI. pip.parse
+# takes binary wheels only.
+bazel_dep(name = "rules_python", version = "2.4.6")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    # Registers the 3.12 interpreter. Not the default: that is the root
+    # module's choice. The runner picks 3.12 by its python_version.
+    is_default = False,
+    python_version = "3.12",
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    download_only = True,
+    hub_name = "em_pip",
+    python_version = "3.12",
+    requirements_lock = "//:requirements_lock.txt",
+)
+use_repo(pip, "em_pip")
+
 register_toolchains(
     "//em/toolchains:helpers",
-    # Last, so it is picked only off Linux x86_64 (spec P1).
+    # The openEMS runner and its stub twin (issue #1).
+    "//em/toolchains:openems",
+    "//em/toolchains:openems_stub",
+    # Last, so they are picked only off Linux x86_64 (spec P1).
     "//em/toolchains:unsupported",
+    "//em/toolchains:openems_unsupported",
 )
 
 # The demonstration tools of the swap test template

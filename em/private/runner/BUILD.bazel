@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+# The openEMS runner of the default openEMS toolchain (issue #1), on
+# rules_python's hermetic CPython 3.12 with the locked wheels of @em_pip.
+# runner.py itself imports neither openEMS nor CSXCAD; the simulation
+# scripts it loads do, so the binary carries them.
+py_library(
+    name = "runner_lib",
+    srcs = ["runner.py"],
+    imports = ["."],
+)
+
+py_binary(
+    name = "runner",
+    srcs = ["runner.py"],
+    # rules_python's default bootstrap starts with `#!/usr/bin/env python3`,
+    # the host's Python; "script" starts the hermetic interpreter. Set here,
+    # a user's build needs no flag for it.
+    config_settings = {
+        "@rules_python//python/config_settings:bootstrap_impl": "script",
+    },
+    python_version = "3.12",
+    visibility = ["//em/toolchains:__pkg__"],
+    deps = [
+        ":runner_lib",
+        "@em_pip//csxcad",
+        "@em_pip//openems",
+    ],
+)
+
+# The parts of the runner that need no solver.
+py_test(
+    name = "runner_test",
+    size = "small",
+    srcs = ["runner_test.py"],
+    config_settings = {
+        "@rules_python//python/config_settings:bootstrap_impl": "script",
+    },
+    python_version = "3.12",
+    deps = [":runner_lib"],
+)
