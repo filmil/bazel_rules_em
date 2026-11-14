@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+exports_files(
+    ["testdata/pair.kicad_pcb"],
+    visibility = ["//tests:__subpackages__"],
+)
+
+# kicad_em_model's board reader (issue #1, step 2): the copper of chosen
+# nets, from the .kicad_pcb, as model.json and model.png. Pure Go.
+go_library(
+    name = "pcbmodel",
+    srcs = [
+        "board.go",
+        "model.go",
+        "picture.go",
+        "sexpr.go",
+    ],
+    importpath = "github.com/filmil/bazel_rules_em/em/private/pcbmodel",
+    visibility = ["//visibility:private"],
+)
+
+go_test(
+    name = "pcbmodel_test",
+    size = "small",
+    srcs = ["pcbmodel_test.go"],
+    data = ["testdata/pair.kicad_pcb"],
+    embed = [":pcbmodel"],
+    pure = "on",
+)
+
+go_binary(
+    name = "cmd",
+    srcs = ["cmd/main.go"],
+    pure = "on",
+    visibility = ["//em/toolchains:__pkg__"],
+    deps = [":pcbmodel"],
+)

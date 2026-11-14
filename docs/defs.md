@@ -8,16 +8,85 @@ Load every rule from this file:
 load(
     "@hdlf_rules_em//em:defs.bzl",
     "determinism_test",
+    "kicad_em_model",
     "swap_test",
     "tool_toolchain",
 )
 ```
 
-This is the scaffold. The EM rules, `kicad_em_model`, `kicad_em_sim` and
-`kicad_em_test`, arrive after the openEMS toolchain, one pull request
-each, as https://github.com/filmil/bazel_rules_em/issues/1 lays out. This
+`kicad_em_model` makes a board's nets an openEMS model. `kicad_em_sim`
+and `kicad_em_test` follow, one pull request each, as
+https://github.com/filmil/bazel_rules_em/issues/1 lays out. This
 file is the only public entry point; everything under `//em/private` may
 change without notice.
+
+<a id="kicad_em_model"></a>
+
+## kicad_em_model
+
+<pre>
+load("@hdlf_rules_em//em:defs.bzl", "kicad_em_model")
+
+kicad_em_model(<a href="#kicad_em_model-name">name</a>, <a href="#kicad_em_model-copper_thickness">copper_thickness</a>, <a href="#kicad_em_model-dielectrics">dielectrics</a>, <a href="#kicad_em_model-nets">nets</a>, <a href="#kicad_em_model-pcb">pcb</a>, <a href="#kicad_em_model-ports">ports</a>, <a href="#kicad_em_model-px_per_mm">px_per_mm</a>)
+</pre>
+
+A board's nets as an openEMS model, built from the board's copper.
+
+```starlark
+kicad_em_model(
+    name = "usb_model",
+    pcb = ":pcb",                      # a .kicad_pcb
+    nets = ["USB_DP", "USB_DM", "GND"],
+    ports = {"P1": "J1.A6", "P2": "J1.A7", "P3": "U1.17", "P4": "U1.18"},
+    copper_thickness = "0.035",        # mm, each copper layer
+    dielectrics = ["1.51mm 4.5 0.02"], # top first: thickness, epsilon_r, loss tangent
+)
+```
+
+It writes:
+
+* `<name>.json`: the model. Each net's copper (tracks, arcs, pads and
+  filled zones, each a polygon on its layer), its plated holes (vias and
+  through-hole pads), the ports, and the stackup with each layer's Z.
+  The frame is mm: X as KiCad's, Y up (KiCad's Y negated), Z up from the
+  bottom copper's bottom face. Numbers have 6 decimals.
+* `<name>.csx/model.xml`: the same as CSXCAD geometry, for kicad_em_sim
+  and for viewing in AppCSXCAD. Each dielectric is a material box over the
+  outline's box, and each net is a metal named `net:<net>`. The loss tangent
+  needs a frequency, so kicad_em_sim applies it.
+* `<name>.png`: a picture from the top. Top copper is red, bottom copper
+  blue (purple where both), inner copper green, holes dark, and ports amber
+  rings.
+
+The geometry comes from the `.kicad_pcb` itself, not from its Gerbers (as
+gerber2ems does). The board file keeps each shape's net, so the model
+names its nets and ports by the board's own names, and a port is a pad
+by reference (`J1.A6`). Pads are drawn from their shape: circle, rect,
+oval, roundrect, and custom (its anchor and its polygon, circle and
+rectangle primitives). Only the nets in `nets` are in the model, so give
+the reference net (such as `GND`) too.
+
+The board's file has no stackup unless KiCad's board setup gave it one,
+so it is given here, one dielectric per gap between copper layers. The
+model's thickness is the copper and dielectrics added up; the board's own
+`(general (thickness))` is in the JSON beside it.
+
+It runs no solver: the geometry is written by CSXCAD on the openEMS
+toolchain, and nothing is solved. The same board gives the same bytes.
+
+**ATTRIBUTES**
+
+
+| Name  | Description | Type | Mandatory | Default |
+| :------------- | :------------- | :------------- | :------------- | :------------- |
+| <a id="kicad_em_model-name"></a>name |  A unique name for this target.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
+| <a id="kicad_em_model-copper_thickness"></a>copper_thickness |  Each copper layer's thickness, in mm. The default is 1 oz copper.   | String | optional |  `"0.035"`  |
+| <a id="kicad_em_model-dielectrics"></a>dielectrics |  The dielectric layers, top first, one per gap between copper layers: `"<thickness>mm <epsilon_r> <loss tangent>"`, such as `"1.51mm 4.5 0.02"`.   | List of strings | required |  |
+| <a id="kicad_em_model-nets"></a>nets |  The nets to model, by the board's names. The reference net (`GND`) too.   | List of strings | required |  |
+| <a id="kicad_em_model-pcb"></a>pcb |  The board: a `.kicad_pcb` (KiCad 7 to 9).   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
+| <a id="kicad_em_model-ports"></a>ports |  Ports: a name to a pad, `REF.PAD`, such as `{"P1": "J1.A6"}`. Each pad's net must be one of `nets`.   | <a href="https://bazel.build/rules/lib/core/dict">Dictionary: String -> String</a> | optional |  `{}`  |
+| <a id="kicad_em_model-px_per_mm"></a>px_per_mm |  The picture's pixels per mm.   | Integer | optional |  `20`  |
+
 
 <a id="tool_toolchain"></a>
 

@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# kicad_em_model (issue #1, step 2) on a small board written by hand in
+# KiCad 9's form (//em/private/pcbmodel:testdata/pair.kicad_pcb): a pair
+# of tracks, an arc, a via, a ground pour, and rect, roundrect, oval,
+# through-hole and custom pads on a turned footprint. Its outputs, the
+# same bytes in two configurations, and the attributes that fail analysis.
+load("@rules_go//go:def.bzl", "go_test")
+load("//em:defs.bzl", "determinism_test", "kicad_em_model")
+load("//tests/toolchains:fails_test.bzl", "fails_test")
+
+_PCB = "//em/private/pcbmodel:testdata/pair.kicad_pcb"
+
+kicad_em_model(
+    name = "pair",
+    dielectrics = ["1.51mm 4.5 0.02"],
+    nets = [
+        "D+",
+        "D-",
+        "GND",
+    ],
+    pcb = _PCB,
+    ports = {
+        "P1": "J1.1",
+        "P2": "J1.2",
+        "P3": "R1.1",
+        "P4": "R1.2",
+    },
+    px_per_mm = 10,
+)
+
+go_test(
+    name = "model_test",
+    size = "small",
+    srcs = ["model_test.go"],
+    args = ["--files=\"$(rlocationpaths :pair)\""],
+    data = [":pair"],
+    pure = "on",
+    deps = ["@rules_go//go/runfiles"],
+)
+
+determinism_test(
+    name = "pair_determinism_test",
+    size = "small",
+    target = ":pair",
+)
+
+kicad_em_model(
+    name = "bad_port",
+    dielectrics = ["1.51mm 4.5 0.02"],
+    nets = ["D+"],
+    pcb = _PCB,
+    ports = {"P1": "J1"},
+    tags = ["manual"],
+)
+
+fails_test(
+    name = "bad_port_test",
+    size = "small",
+    message = "want a name and a pad REF.PAD",
+    target_under_test = ":bad_port",
+)
+
+kicad_em_model(
+    name = "no_dielectrics",
+    dielectrics = [],
+    nets = ["D+"],
+    pcb = _PCB,
+    tags = ["manual"],
+)
+
+fails_test(
+    name = "no_dielectrics_test",
+    size = "small",
+    message = "dielectrics is empty",
+    target_under_test = ":no_dielectrics",
+)
