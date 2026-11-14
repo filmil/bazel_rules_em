@@ -68,7 +68,7 @@ def _kicad_em_model_impl(ctx):
             "--params",
             json.encode({"model": js.path}),
         ],
-        inputs = [ctx.file._script, js],
+        inputs = [ctx.file._script, ctx.file._geometry, js],
         outputs = [csx],
         mnemonic = "EmGeometry",
         progress_message = "Writing the CSXCAD geometry of %{label}",
@@ -166,6 +166,10 @@ toolchain, and nothing is solved. The same board gives the same bytes.
         ),
         "_script": attr.label(
             default = Label("//em/private/model:csx.py"),
+            allow_single_file = [".py"],
+        ),
+        "_geometry": attr.label(
+            default = Label("//em/private/model:geometry.py"),
             allow_single_file = [".py"],
         ),
     },

@@ -1,8 +1,39 @@
 # SPDX-License-Identifier: Apache-2.0
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
 #
-# kicad_em_model's CSXCAD script (issue #1, step 2): model.json to
-# model.xml, run by the openEMS runner, which solves nothing here.
+# The openEMS runner's scripts (issue #1): csx.py, kicad_em_model's
+# model.json to model.xml, which solves nothing; sim.py, kicad_em_sim's
+# solver runs; and geometry.py, the CSXCAD geometry both build.
 exports_files(
-    ["csx.py"],
+    [
+        "csx.py",
+        "geometry.py",
+        "sim.py",
+    ],
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "sim_lib",
+    srcs = [
+        "geometry.py",
+        "sim.py",
+    ],
+    imports = ["."],
+)
+
+py_test(
+    name = "sim_test",
+    size = "small",
+    srcs = ["sim_test.py"],
+    config_settings = {
+        "@rules_python//python/config_settings:bootstrap_impl": "script",
+    },
+    python_version = "3.12",
+    deps = [
+        ":sim_lib",
+        "@em_pip//numpy",
+    ],
 )

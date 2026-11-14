@@ -9,13 +9,14 @@ load(
     "@hdlf_rules_em//em:defs.bzl",
     "determinism_test",
     "kicad_em_model",
+    "kicad_em_sim",
     "swap_test",
     "tool_toolchain",
 )
 ```
 
-`kicad_em_model` makes a board's nets an openEMS model. `kicad_em_sim`
-and `kicad_em_test` follow, one pull request each, as
+`kicad_em_model` makes a board's nets an openEMS model, and `kicad_em_sim`
+solves it: S-parameters, impedance and TDR. `kicad_em_test` follows, as
 https://github.com/filmil/bazel_rules_em/issues/1 lays out. This
 file is the only public entry point; everything under `//em/private` may
 change without notice.
@@ -93,6 +94,74 @@ toolchain, and nothing is solved. The same board gives the same bytes.
 | <a id="kicad_em_model-pcb"></a>pcb |  The board: a `.kicad_pcb` (KiCad 7 to 9).   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
 | <a id="kicad_em_model-ports"></a>ports |  Ports: a name to a pad, `REF.PAD`, such as `{"P1": "J1.A6"}`. Each pad's net must be one of `nets`, and its name its own (a pad name that several pads share fails). A through-hole pad's port is on its first layer; `REF.PAD@B.Cu` puts it on another.   | <a href="https://bazel.build/rules/lib/core/dict">Dictionary: String -> String</a> | optional |  `{}`  |
 | <a id="kicad_em_model-px_per_mm"></a>px_per_mm |  The picture's pixels per mm: 1 to 100.   | Integer | optional |  `20`  |
+
+
+<a id="kicad_em_sim"></a>
+
+## kicad_em_sim
+
+<pre>
+load("@hdlf_rules_em//em:defs.bzl", "kicad_em_sim")
+
+kicad_em_sim(<a href="#kicad_em_sim-name">name</a>, <a href="#kicad_em_sim-air_mm">air_mm</a>, <a href="#kicad_em_sim-f_start">f_start</a>, <a href="#kicad_em_sim-f_stop">f_stop</a>, <a href="#kicad_em_sim-mesh_mm">mesh_mm</a>, <a href="#kicad_em_sim-model">model</a>, <a href="#kicad_em_sim-points">points</a>, <a href="#kicad_em_sim-steps">steps</a>, <a href="#kicad_em_sim-threads">threads</a>, <a href="#kicad_em_sim-z0">z0</a>)
+</pre>
+
+Solves a kicad_em_model with openEMS: S-parameters, impedance and TDR.
+
+```starlark
+kicad_em_sim(
+    name = "usb_sim",
+    model = ":usb_model",  # kicad_em_model, with ports
+    f_start = "100MHz",
+    f_stop = "6GHz",
+    tags = ["fdtd"],
+)
+```
+
+It writes a directory `<name>/`:
+
+* `<name>.s<N>p`: the S-parameters of the model's N ports, Touchstone 1.1
+  (Hz, S, real and imaginary, R `z0`), the ports in name order;
+* `s_params.png`: |S| in dB of every pair;
+* `impedance.png`: each port's input impedance, real and imaginary;
+* `tdr.png`: each port's TDR impedance, from its S11: the reflection of a
+  step whose rise time is about 0.35 / `f_stop`;
+* `report.md`: the setup, the mesh, S at the band's ends and middle, and
+  each port's lowest and highest TDR impedance.
+
+Each port is a lumped port of `z0` from its pad down to the next copper
+layer (up, for the bottom layer), so the copper there is the reference:
+model it, such as `GND`. Every port is excited once, in its own run, so N
+ports take N runs. The copper is drawn as sheets of no thickness, so the
+mesh needs no cells as thin as the copper. The mesh has lines at each
+copper shape's edges and centre, and is at most `mesh_mm`. `air_mm` of air
+lies around the board, and its outer 8 cells absorb (PML), so it must be at
+least 8 `mesh_mm`. Each run takes exactly `steps` time steps: openEMS
+checks its own end criterion at wall-clock intervals, so stopping on it
+would make the result depend on the machine's speed. Give enough steps for
+the pulse to leave the board (the report of a run with more steps shows
+whether the S-parameters still move). The dielectric's loss tangent is
+applied at the band's centre.
+
+openEMS runs its multithreaded engine with `threads` threads, so the same
+model gives the same bytes. FDTD is slow: tag the target `fdtd`, and keep
+its mesh and `steps` small in tests.
+
+**ATTRIBUTES**
+
+
+| Name  | Description | Type | Mandatory | Default |
+| :------------- | :------------- | :------------- | :------------- | :------------- |
+| <a id="kicad_em_sim-name"></a>name |  A unique name for this target.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
+| <a id="kicad_em_sim-air_mm"></a>air_mm |  The air around the board, in mm: at least 8 `mesh_mm`, for the absorbing boundary.   | String | optional |  `"2"`  |
+| <a id="kicad_em_sim-f_start"></a>f_start |  The band's start: a number and Hz, kHz, MHz or GHz.   | String | optional |  `"100MHz"`  |
+| <a id="kicad_em_sim-f_stop"></a>f_stop |  The band's end, which also sets the excitation's width and the TDR's rise time.   | String | optional |  `"6GHz"`  |
+| <a id="kicad_em_sim-mesh_mm"></a>mesh_mm |  The largest mesh cell, in mm. Finer is slower and closer.   | String | optional |  `"0.25"`  |
+| <a id="kicad_em_sim-model"></a>model |  The model (`kicad_em_model`), with ports.   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
+| <a id="kicad_em_sim-points"></a>points |  The number of frequencies in the band, for the Touchstone file and the plots.   | Integer | optional |  `101`  |
+| <a id="kicad_em_sim-steps"></a>steps |  The time steps of each run, exactly: 100 or more.   | Integer | optional |  `20000`  |
+| <a id="kicad_em_sim-threads"></a>threads |  openEMS's thread count, fixed.   | Integer | optional |  `2`  |
+| <a id="kicad_em_sim-z0"></a>z0 |  The ports' reference impedance, in ohm.   | String | optional |  `"50"`  |
 
 
 <a id="tool_toolchain"></a>

@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# kicad_em_sim (issue #1, step 3) on the fixture board's D+ line, from J1.1
+# to R1.2 over the GND pour: a through line, so S21 is near 0 dB at low
+# frequency and S21 equals S12. The solve and every test that reads it are
+# tagged fdtd (`bazel test --config=fdtd //...`); the swap test and the
+# analysis tests are not.
+load("@rules_go//go:def.bzl", "go_test")
+load("//em:defs.bzl", "determinism_test", "kicad_em_model", "kicad_em_sim", "swap_test")
+load("//tests/toolchains:fails_test.bzl", "fails_test")
+
+_PCB = "//em/private/pcbmodel:testdata/pair.kicad_pcb"
+
+kicad_em_model(
+    name = "line",
+    dielectrics = ["1.51mm 4.5 0.02"],
+    nets = [
+        "D+",
+        "GND",
+    ],
+    pcb = _PCB,
+    ports = {
+        "P1": "J1.1",
+        "P2": "R1.2",
+    },
+)
+
+kicad_em_sim(
+    name = "line_sim",
+    f_start = "100MHz",
+    f_stop = "6GHz",
+    model = ":line",
+    points = 21,
+    # The pulse has left this small board by then (PML, -30 dB at about
+    # 13000 steps).
+    steps = 14000,
+    tags = ["fdtd"],
+)
+
+go_test(
+    name = "sim_test",
+    size = "small",
+    srcs = ["sim_test.go"],
+    args = ["--dir=$(rlocationpath :line_sim)"],
+    data = [":line_sim"],
+    pure = "on",
+    tags = ["fdtd"],
+    deps = ["@rules_go//go/runfiles"],
+)
+
+determinism_test(
+    name = "line_sim_determinism_test",
+    size = "large",
+    tags = ["fdtd"],
+    target = ":line_sim",
+)
+
+# With the stub in place of the runner, nothing is solved, so this is not
+# fdtd.
+swap_test(
+    name = "line_sim_swap_test",
+    size = "small",
+    targets = [":line_sim"],
+)
+
+kicad_em_model(
+    name = "no_ports",
+    dielectrics = ["1.51mm 4.5 0.02"],
+    nets = ["D+"],
+    pcb = _PCB,
+    tags = ["manual"],
+)
+
+kicad_em_sim(
+    name = "no_ports_sim",
+    model = ":no_ports",
+    tags = ["manual"],
+)
+
+fails_test(
+    name = "no_ports_test",
+    size = "small",
+    message = "has no ports",
+    target_under_test = ":no_ports_sim",
+)
+
+kicad_em_sim(
+    name = "few_steps",
+    model = ":line",
+    steps = 10,
+    tags = ["manual"],
+)
+
+fails_test(
+    name = "few_steps_test",
+    size = "small",
+    message = "steps 10: want 100 or more",
+    target_under_test = ":few_steps",
+)
