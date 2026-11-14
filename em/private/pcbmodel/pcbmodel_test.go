@@ -67,8 +67,8 @@ func TestReadBoard(t *testing.T) {
 		"J1.1": {"D+", Pt{102, 104.5}, []string{"F.Cu"}},
 		"J1.3": {"GND", Pt{100, 105}, []string{"F.Cu", "B.Cu"}},
 		// R1 is turned 90°: its pad 1 at (-0.5, 0) goes to +Y (down).
-		"R1.1": {"D+", Pt{118, 105.5}, []string{"F.Cu"}},
-		"R1.2": {"D-", Pt{118, 104.5}, []string{"F.Cu"}},
+		"R1.1": {"D-", Pt{118, 105.5}, []string{"F.Cu"}},
+		"R1.2": {"D+", Pt{118, 104.5}, []string{"F.Cu"}},
 	} {
 		got, ok := b.Pads[ref]
 		if !ok || got.Net != want.Net || !close(got.At, want.At) || strings.Join(got.Layers, ",") != strings.Join(want.Layers, ",") {
@@ -89,18 +89,18 @@ func TestReadBoard(t *testing.T) {
 	if math.Abs(area(pad)-want) > 0.002 {
 		t.Errorf("roundrect pad area %v, want %v", area(pad), want)
 	}
-	// The custom pad: its circle anchor and its square, turned with R1.
+	// J1.2's rect, and the custom pad R1.2's square (turned with R1).
 	n := 0
 	for _, s := range b.Shapes {
-		if s.Net == "D-" && len(s.Points) == 4 {
+		if (s.Net == "D-" || s.Net == "D+") && len(s.Points) == 4 {
 			n++
 			if math.Abs(area(s.Points)-0.16) > 1e-9 && math.Abs(area(s.Points)-0.4) > 1e-9 {
-				t.Errorf("a D- quadrilateral of area %v", area(s.Points))
+				t.Errorf("a %s quadrilateral of area %v", s.Net, area(s.Points))
 			}
 		}
 	}
-	if n != 2 { // J1.2's rect and R1.2's square
-		t.Errorf("%d D- quadrilaterals, want 2", n)
+	if n != 2 {
+		t.Errorf("%d quadrilaterals, want 2", n)
 	}
 }
 
@@ -228,3 +228,143 @@ func TestPicture(t *testing.T) {
 }
 
 func rgba(c stdcolor.Color) stdcolor.NRGBA { return stdcolor.NRGBAModel.Convert(c).(stdcolor.NRGBA) }
+
+// A four-layer board: inner layers, a footprint on the bottom, a blind
+// via, an oval drill with an offset pad, two pads of one name, an
+// Edge.Cuts line inside a footprint, and an unfilled zone.
+const fourLayers = `(kicad_pcb (version 20241229)
+	(general (thickness 1.6))
+	(layers (0 "F.Cu" signal) (4 "In1.Cu" signal) (6 "In2.Cu" signal) (2 "B.Cu" signal) (25 "Edge.Cuts" user))
+	(net 0 "") (net 1 "GND") (net 2 "S") (net 3 "VBUS")
+	(footprint "J" (layer "B.Cu") (at 10 10)
+		(property "Reference" "J2")
+		(pad "1" smd rect (at 0 0) (size 1 1) (layers "B.Cu") (net 2 "S"))
+		(pad "S" thru_hole oval (at 3 0) (size 2 1.2) (drill oval 1.6 0.8 (offset 0.1 0)) (layers "*.Cu") (net 1 "GND"))
+		(pad "S" thru_hole oval (at -3 0) (size 2 1.2) (drill oval 1.6 0.8) (layers "*.Cu") (net 1 "GND"))
+		(fp_line (start 0 5) (end 0 25) (layer "Edge.Cuts")))
+	(via blind (at 5 5) (size 0.5) (drill 0.2) (layers "F.Cu" "In1.Cu") (net 2))
+	(segment (start 0 0) (end 5 5) (width 0.2) (layer "In2.Cu") (net 2))
+	(zone (net 3) (net_name "VBUS") (layer "In1.Cu"))
+	(gr_line (start 0 0) (end 20 0) (layer "Edge.Cuts"))
+	(gr_line (start 20 0) (end 20 20) (layer "Edge.Cuts")))`
+
+func TestFourLayers(t *testing.T) {
+	b, err := ReadBoard(fourLayers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(b.Layers, ",") != "F.Cu,In1.Cu,In2.Cu,B.Cu" {
+		t.Errorf("layers %v", b.Layers)
+	}
+	// The footprint's Edge.Cuts line reaches Y 35.
+	if b.Outline != [4]float64{0, 0, 20, 35} {
+		t.Errorf("outline %v", b.Outline)
+	}
+	if p := b.Pads["J2.1"]; strings.Join(p.Layers, ",") != "B.Cu" {
+		t.Errorf("J2.1 on %v, want B.Cu", p.Layers)
+	}
+	if b.Shared["J2.S"] != 2 {
+		t.Errorf("J2.S shared by %d pads, want 2", b.Shared["J2.S"])
+	}
+	var blind, slot *Hole
+	for i := range b.Holes {
+		h := &b.Holes[i]
+		if h.Net == "S" {
+			blind = h
+		}
+		if h.Slot != nil && slot == nil {
+			slot = h
+		}
+	}
+	if blind == nil || strings.Join(blind.Layers, ",") != "F.Cu,In1.Cu" {
+		t.Errorf("blind via %+v", blind)
+	}
+	// A 1.6 x 0.8 slot: a 0.8 x 0.8 square and a 0.8 circle.
+	if slot == nil || math.Abs(area(slot.Slot)-(0.64+math.Pi*0.16)) > 0.01 || slot.Drill != 0.8 {
+		t.Errorf("slot %+v", slot)
+	}
+	// The offset pad's copper is 0.1 mm right of its hole at (13, 10).
+	found := false
+	for _, s := range b.Shapes {
+		if s.Net == "GND" && s.Layer == "In2.Cu" {
+			minX := math.Inf(1)
+			for _, p := range s.Points {
+				minX = math.Min(minX, p.X)
+			}
+			found = found || math.Abs(minX-12.1) < 1e-9
+		}
+	}
+	if !found {
+		t.Error("no GND pad on In2.Cu starting at X 12.1 (13 - 1 + 0.1)")
+	}
+	o := Options{Nets: []string{"S", "GND"}, Ports: map[string]string{"P1": "J2.1"}, Copper: 0.035,
+		Dielectrics: []Dielectric{{0.2, 4.4, 0.02}, {1.0, 4.5, 0.02}, {0.2, 4.4, 0.02}}}
+	m, err := Build(b, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// From the bottom: B.Cu 0, d3 0.035, In2 0.235, d2 0.27, In1 1.27,
+	// d1 1.305, F.Cu 1.505.
+	var zs []string
+	for _, l := range m.Copper {
+		zs = append(zs, f(l.Z))
+	}
+	if got := strings.Join(zs, " "); got != "1.505000 1.270000 0.235000 0" {
+		t.Errorf("copper Z %s", got)
+	}
+	if m.Dielectrics[1].Z != 0.27 {
+		t.Errorf("the middle dielectric at Z %v, want 0.27", m.Dielectrics[1].Z)
+	}
+	if !strings.Contains(string(m.JSON()), `"slot": [`) {
+		t.Error("model.json has no slot")
+	}
+	pic, err := m.Picture(5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := png.Decode(bytes.NewReader(pic)); err != nil {
+		t.Error(err)
+	}
+	for what, change := range map[string]func(*Options){
+		"a shared pad name": func(o *Options) { o.Ports["P2"] = "J2.S" },
+		"an unfilled zone":  func(o *Options) { o.Nets = append(o.Nets, "VBUS") },
+		"a port's layer":    func(o *Options) { o.Ports["P1"] = "J2.1@F.Cu" },
+		"a net twice":       func(o *Options) { o.Nets = append(o.Nets, "S") },
+	} {
+		o2 := o
+		o2.Nets = append([]string(nil), o.Nets...)
+		o2.Ports = map[string]string{"P1": "J2.1"}
+		change(&o2)
+		if _, err := Build(b, o2); err == nil {
+			t.Errorf("%s: no error", what)
+		}
+	}
+}
+
+func TestNumbers(t *testing.T) {
+	for _, bad := range []string{"NaN", "Inf", "-1", "0", "x", "0..1"} {
+		if _, err := ParseMM(bad); err == nil {
+			t.Errorf("ParseMM(%q): no error", bad)
+		}
+	}
+	if v, err := ParseMM("0.035mm"); err != nil || v != 0.035 {
+		t.Errorf("ParseMM(0.035mm) = %v, %v", v, err)
+	}
+	if d, err := ParseDielectric("0.2mm 4.4 2.5e-4"); err != nil || d.LossTangent != 2.5e-4 {
+		t.Errorf("ParseDielectric with 2.5e-4: %+v, %v", d, err)
+	}
+	for _, bad := range []string{"1.51mm 4.5 0..02", "1.51mm NaN 0.02", "1.51mm 4.5 -1"} {
+		if _, err := ParseDielectric(bad); err == nil {
+			t.Errorf("ParseDielectric(%q): no error", bad)
+		}
+	}
+	m, err := Build(board(t), options())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, px := range []int{0, 101} {
+		if _, err := m.Picture(px); err == nil {
+			t.Errorf("Picture(%d): no error", px)
+		}
+	}
+}

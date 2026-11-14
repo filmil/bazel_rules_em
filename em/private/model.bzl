@@ -27,8 +27,11 @@ def _kicad_em_model_impl(ctx):
         fail("%s: nets names no net to model" % ctx.label)
     if not ctx.attr.dielectrics:
         fail("%s: dielectrics is empty: give one per gap between copper layers" % ctx.label)
+    if ctx.attr.px_per_mm < 1 or ctx.attr.px_per_mm > 100:
+        fail("%s: px_per_mm %d: want 1 to 100" % (ctx.label, ctx.attr.px_per_mm))
     for name, pad in ctx.attr.ports.items():
-        if "." not in pad or "=" in name or not name:
+        ref, _, pin = pad.partition("@")[0].partition(".")
+        if not ref or not pin or "=" in name or not name:
             fail("%s: port %r = %r: want a name and a pad REF.PAD, such as {\"P1\": \"J1.A6\"}" % (ctx.label, name, pad))
     js = ctx.actions.declare_file(ctx.label.name + ".json")
     png = ctx.actions.declare_file(ctx.label.name + ".png")
@@ -100,10 +103,14 @@ It writes:
   through-hole pads), the ports, and the stackup with each layer's Z.
   The frame is mm: X as KiCad's, Y up (KiCad's Y negated), Z up from the
   bottom copper's bottom face. Numbers have 6 decimals.
-* `<name>.csx/model.xml`: the same as CSXCAD geometry, for kicad_em_sim
-  and for viewing in AppCSXCAD. Each dielectric is a material box over the
-  outline's box, and each net is a metal named `net:<net>`. The loss tangent
-  needs a frequency, so kicad_em_sim applies it.
+* `<name>.csx/model.xml`: the model's geometry as CSXCAD XML, for
+  kicad_em_sim and for viewing in AppCSXCAD. Each dielectric is a material
+  box over the outline's box (an inner copper layer's slab is the
+  dielectric above it where it has no copper), and each net is a metal
+  named `net:<net>`: its shapes extruded through their layer, its holes as
+  barrels of the drill's size. The ports are not in it: kicad_em_sim sets
+  them up from the JSON. The loss tangent needs a frequency, so
+  kicad_em_sim applies it too.
 * `<name>.png`: a picture from the top. Top copper is red, bottom copper
   blue (purple where both), inner copper green, holes dark, and ports amber
   rings.
@@ -113,8 +120,11 @@ gerber2ems does). The board file keeps each shape's net, so the model
 names its nets and ports by the board's own names, and a port is a pad
 by reference (`J1.A6`). Pads are drawn from their shape: circle, rect,
 oval, roundrect, and custom (its anchor and its polygon, circle and
-rectangle primitives). Only the nets in `nets` are in the model, so give
-the reference net (such as `GND`) too.
+rectangle primitives; a chamfered pad fails). A via's pads are drawn on
+each layer it joins, and an oval drill is a slot. Only the nets in `nets`
+are in the model, so give the reference net (such as `GND`) too. A zone
+saved without its fill fails: fill the zones in KiCad first. The board's
+outline is the box of its Edge.Cuts items, footprints' included.
 
 The board's file has no stackup unless KiCad's board setup gave it one,
 so it is given here, one dielectric per gap between copper layers. The
@@ -136,10 +146,13 @@ toolchain, and nothing is solved. The same board gives the same bytes.
         ),
         "ports": attr.string_dict(
             doc = "Ports: a name to a pad, `REF.PAD`, such as `{\"P1\": \"J1.A6\"}`. Each " +
-                  "pad's net must be one of `nets`.",
+                  "pad's net must be one of `nets`, and its name its own (a pad name that " +
+                  "several pads share fails). A through-hole pad's port is on its first " +
+                  "layer; `REF.PAD@B.Cu` puts it on another.",
         ),
         "copper_thickness": attr.string(
-            doc = "Each copper layer's thickness, in mm. The default is 1 oz copper.",
+            doc = "Each copper layer's thickness, in mm: `\"0.035\"` or `\"0.035mm\"`. The " +
+                  "default is 1 oz copper.",
             default = "0.035",
         ),
         "dielectrics": attr.string_list(
@@ -148,7 +161,7 @@ toolchain, and nothing is solved. The same board gives the same bytes.
             mandatory = True,
         ),
         "px_per_mm": attr.int(
-            doc = "The picture's pixels per mm.",
+            doc = "The picture's pixels per mm: 1 to 100.",
             default = 20,
         ),
         "_script": attr.label(

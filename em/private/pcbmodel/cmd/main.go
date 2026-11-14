@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/filmil/bazel_rules_em/em/private/pcbmodel"
@@ -42,8 +41,8 @@ func run(args []string) error {
 	}
 	o := pcbmodel.Options{Nets: nets, Ports: map[string]string{}}
 	var err error
-	if o.Copper, err = strconv.ParseFloat(*copper, 64); err != nil {
-		return fmt.Errorf("--copper %q: %v", *copper, err)
+	if o.Copper, err = pcbmodel.ParseMM(*copper); err != nil {
+		return fmt.Errorf("--copper: %v", err)
 	}
 	for _, d := range dielectrics {
 		v, err := pcbmodel.ParseDielectric(d)

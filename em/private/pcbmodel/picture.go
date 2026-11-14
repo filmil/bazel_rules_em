@@ -4,6 +4,7 @@ package pcbmodel
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -91,6 +92,9 @@ func (g *grid) fill(poly []Pt) {
 // bottom copper blue (purple where both), inner copper green, holes dark,
 // and each port as an amber ring.
 func (m *Model) Picture(pxPerMM int) ([]byte, error) {
+	if pxPerMM < 1 || pxPerMM > maxPxPerMM {
+		return nil, fmt.Errorf("%d pixels per mm: want 1 to %d", pxPerMM, maxPxPerMM)
+	}
 	layer := func(name string) *grid {
 		g := newGrid(m, pxPerMM)
 		for _, s := range m.Shapes {
@@ -104,7 +108,11 @@ func (m *Model) Picture(pxPerMM int) ([]byte, error) {
 	area, holes, ports := newGrid(m, pxPerMM), newGrid(m, pxPerMM), newGrid(m, pxPerMM)
 	area.fill([]Pt{{m.Board[0], m.Board[1]}, {m.Board[2], m.Board[1]}, {m.Board[2], m.Board[3]}, {m.Board[0], m.Board[3]}})
 	for _, h := range m.Holes {
-		holes.fill(circle(h.At, h.Drill/2))
+		if h.Slot != nil {
+			holes.fill(h.Slot)
+		} else {
+			holes.fill(circle(h.At, h.Drill/2))
+		}
 	}
 	for _, p := range m.Ports {
 		outer, in := circle(p.At, 0.5), circle(p.At, 0.3)

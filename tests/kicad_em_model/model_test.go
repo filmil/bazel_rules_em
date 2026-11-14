@@ -65,7 +65,7 @@ func TestJSON(t *testing.T) {
 	for _, p := range m.Ports {
 		ports = append(ports, p.Name+"="+p.Pad+"/"+p.Net+"/"+p.Layer)
 	}
-	if got := strings.Join(ports, " "); got != "P1=J1.1/D+/F.Cu P2=J1.2/D-/F.Cu P3=R1.1/D+/F.Cu P4=R1.2/D-/F.Cu" {
+	if got := strings.Join(ports, " "); got != "P1=J1.1/D+/F.Cu P2=J1.2/D-/F.Cu P3=R1.1/D-/F.Cu P4=R1.2/D+/F.Cu" {
 		t.Errorf("ports %s", got)
 	}
 	if len(m.Copper) != 2 || m.Copper[0].Z != 1.545 {
@@ -91,6 +91,9 @@ func TestCSX(t *testing.T) {
 	}
 	for _, want := range []string{
 		`DeltaUnit="0.001"`,
+		// The dielectric from the bottom copper's top to the top copper's
+		// bottom, and the via's barrel through both.
+		`Z="3.500000e-02"`, `Z="1.545000e+00"`, `Z="1.580000e+00"`,
 		`<Material ID="0" Name="dielectric_1"`,
 		`Epsilon="4.500000e+00,`,
 		`Name="net:D+"`, `Name="net:D-"`, `Name="net:GND"`,

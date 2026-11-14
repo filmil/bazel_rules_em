@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"fmt"
 	"math"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,7 +21,9 @@ type Options struct {
 	// Nets are the nets to model; their copper, and nothing else, is in
 	// the model.
 	Nets []string
-	// Ports maps a port's name to a pad, "REF.PAD", such as "J1.A6".
+	// Ports maps a port's name to a pad, "REF.PAD", such as "J1.A6", or
+	// "REF.PAD@LAYER" for a through-hole pad's port on another layer than
+	// its first.
 	Ports map[string]string
 	// Copper is each copper layer's thickness, mm.
 	Copper float64
@@ -36,21 +37,37 @@ type Dielectric struct {
 	Thickness, EpsilonR, LossTangent float64
 }
 
-var dielectricRe = regexp.MustCompile(`^\s*([0-9.]+)\s*mm\s+([0-9.]+)\s+([0-9.]+)\s*$`)
+// ParseMM reads a length in mm: "0.035" or "0.035mm", finite and above 0.
+func ParseMM(s string) (float64, error) {
+	v, err := strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(s), "mm"), 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v <= 0 {
+		return 0, fmt.Errorf("%q: want a length in mm above 0, such as 0.035 or 0.035mm", s)
+	}
+	return v, nil
+}
 
 // ParseDielectric reads "1.51mm 4.5 0.02": thickness, relative
 // permittivity, loss tangent.
 func ParseDielectric(s string) (Dielectric, error) {
-	m := dielectricRe.FindStringSubmatch(s)
-	if m == nil {
-		return Dielectric{}, fmt.Errorf("dielectric %q: want \"<thickness>mm <epsilon_r> <loss tangent>\", such as \"1.51mm 4.5 0.02\"", s)
+	bad := fmt.Errorf("dielectric %q: want \"<thickness>mm <epsilon_r> <loss tangent>\", such as \"1.51mm 4.5 0.02\"", s)
+	f := strings.Fields(s)
+	if len(f) != 3 || !strings.HasSuffix(f[0], "mm") {
+		return Dielectric{}, bad
 	}
 	d := Dielectric{}
-	d.Thickness, _ = strconv.ParseFloat(m[1], 64)
-	d.EpsilonR, _ = strconv.ParseFloat(m[2], 64)
-	d.LossTangent, _ = strconv.ParseFloat(m[3], 64)
-	if d.Thickness <= 0 || d.EpsilonR < 1 {
-		return Dielectric{}, fmt.Errorf("dielectric %q: the thickness must be above 0 and epsilon_r at least 1", s)
+	var err error
+	if d.Thickness, err = ParseMM(f[0]); err != nil {
+		return Dielectric{}, bad
+	}
+	finite := func(t string) (float64, bool) {
+		v, err := strconv.ParseFloat(t, 64)
+		return v, err == nil && !math.IsNaN(v) && !math.IsInf(v, 0)
+	}
+	var ok1, ok2 bool
+	d.EpsilonR, ok1 = finite(f[1])
+	d.LossTangent, ok2 = finite(f[2])
+	if !ok1 || !ok2 || d.EpsilonR < 1 || d.LossTangent < 0 {
+		return Dielectric{}, fmt.Errorf("dielectric %q: epsilon_r must be at least 1 and the loss tangent at least 0", s)
 	}
 	return d, nil
 }
@@ -82,6 +99,9 @@ type Model struct {
 	Ports       []Port
 }
 
+// Picture's and NewFrame's resolution bounds.
+const maxPxPerMM = 100
+
 func flip(p Pt) Pt { return Pt{p.X, -p.Y} }
 
 // Build selects the model's copper from the board.
@@ -91,6 +111,9 @@ func Build(b *Board, o Options) (*Model, error) {
 	}
 	want := map[string]bool{}
 	for _, n := range o.Nets {
+		if want[n] {
+			return nil, fmt.Errorf("net %q is named twice", n)
+		}
 		if !b.Nets[n] {
 			var have []string
 			for k := range b.Nets {
@@ -100,12 +123,15 @@ func Build(b *Board, o Options) (*Model, error) {
 			return nil, fmt.Errorf("net %q is not on the board; it has %s", n, strings.Join(have, ", "))
 		}
 		want[n] = true
+		if b.Unfilled[n] {
+			return nil, fmt.Errorf("net %q has a zone saved without its fill: fill the zones in KiCad (B) and save", n)
+		}
 	}
 	if len(o.Dielectrics) != len(b.Layers)-1 {
 		return nil, fmt.Errorf("the board has %d copper layers, so %d dielectrics, not %d",
 			len(b.Layers), len(b.Layers)-1, len(o.Dielectrics))
 	}
-	if o.Copper <= 0 {
+	if !(o.Copper > 0) || math.IsInf(o.Copper, 0) {
 		return nil, fmt.Errorf("copper thickness %v mm: want above 0", o.Copper)
 	}
 	m := &Model{
@@ -152,6 +178,11 @@ func Build(b *Board, o Options) (*Model, error) {
 	for _, h := range b.Holes {
 		if want[h.Net] {
 			h.At = flip(h.At)
+			var slot []Pt
+			for _, p := range h.Slot {
+				slot = append(slot, flip(p))
+			}
+			h.Slot = slot
 			m.Holes = append(m.Holes, h)
 		}
 	}
@@ -161,20 +192,37 @@ func Build(b *Board, o Options) (*Model, error) {
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		ref := o.Ports[n]
+		ref, layer, _ := strings.Cut(o.Ports[n], "@")
 		p, ok := b.Pads[ref]
 		if !ok {
 			return nil, fmt.Errorf("port %s: no pad %s on the board (want REF.PAD, such as J1.A6)", n, ref)
 		}
+		if k := b.Shared[ref]; k > 0 {
+			return nil, fmt.Errorf("port %s: %d pads are named %s, so it names none", n, k, ref)
+		}
 		if !want[p.Net] {
 			return nil, fmt.Errorf("port %s: pad %s is on net %q, which is not one of the nets modelled", n, ref, p.Net)
 		}
-		m.Ports = append(m.Ports, Port{n, ref, p.Net, p.Layers[0], flip(p.At)})
+		if layer == "" {
+			layer = p.Layers[0]
+		} else if !contains(p.Layers, layer) {
+			return nil, fmt.Errorf("port %s: pad %s is on %s, not %s", n, ref, strings.Join(p.Layers, ", "), layer)
+		}
+		m.Ports = append(m.Ports, Port{n, ref, p.Net, layer, flip(p.At)})
 	}
 	if len(m.Shapes) == 0 {
 		return nil, fmt.Errorf("the nets %s have no copper", strings.Join(nets, ", "))
 	}
 	return m, nil
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // f writes a number in mm with 6 decimals (a nanometre), so the JSON does
@@ -235,8 +283,19 @@ func (m *Model) JSON() []byte {
 		for _, l := range h.Layers {
 			ls = append(ls, q(l))
 		}
-		p("\n    {\"net\": %s, \"x\": %s, \"y\": %s, \"drill\": %s, \"size\": %s, \"layers\": [%s]}",
+		p("\n    {\"net\": %s, \"x\": %s, \"y\": %s, \"drill\": %s, \"size\": %s, \"layers\": [%s]",
 			q(h.Net), f(h.At.X), f(h.At.Y), f(h.Drill), f(h.Size), strings.Join(ls, ", "))
+		if h.Slot != nil {
+			p(", \"slot\": [")
+			for k, pt := range h.Slot {
+				if k > 0 {
+					p(", ")
+				}
+				p("[%s, %s]", f(pt.X), f(pt.Y))
+			}
+			p("]")
+		}
+		p("}")
 	}
 	p("\n  ],\n  \"shapes\": [")
 	for i, s := range m.Shapes {

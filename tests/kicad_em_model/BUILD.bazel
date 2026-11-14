@@ -75,3 +75,34 @@ fails_test(
     message = "dielectrics is empty",
     target_under_test = ":no_dielectrics",
 )
+
+kicad_em_model(
+    name = "no_nets",
+    dielectrics = ["1.51mm 4.5 0.02"],
+    nets = [],
+    pcb = _PCB,
+    tags = ["manual"],
+)
+
+fails_test(
+    name = "no_nets_test",
+    size = "small",
+    message = "nets names no net to model",
+    target_under_test = ":no_nets",
+)
+
+kicad_em_model(
+    name = "half_port",
+    dielectrics = ["1.51mm 4.5 0.02"],
+    nets = ["D+"],
+    pcb = _PCB,
+    ports = {"P1": "J1."},
+    tags = ["manual"],
+)
+
+fails_test(
+    name = "half_port_test",
+    size = "small",
+    message = "want a name and a pad REF.PAD",
+    target_under_test = ":half_port",
+)

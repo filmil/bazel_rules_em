@@ -50,10 +50,14 @@ It writes:
   through-hole pads), the ports, and the stackup with each layer's Z.
   The frame is mm: X as KiCad's, Y up (KiCad's Y negated), Z up from the
   bottom copper's bottom face. Numbers have 6 decimals.
-* `<name>.csx/model.xml`: the same as CSXCAD geometry, for kicad_em_sim
-  and for viewing in AppCSXCAD. Each dielectric is a material box over the
-  outline's box, and each net is a metal named `net:<net>`. The loss tangent
-  needs a frequency, so kicad_em_sim applies it.
+* `<name>.csx/model.xml`: the model's geometry as CSXCAD XML, for
+  kicad_em_sim and for viewing in AppCSXCAD. Each dielectric is a material
+  box over the outline's box (an inner copper layer's slab is the
+  dielectric above it where it has no copper), and each net is a metal
+  named `net:<net>`: its shapes extruded through their layer, its holes as
+  barrels of the drill's size. The ports are not in it: kicad_em_sim sets
+  them up from the JSON. The loss tangent needs a frequency, so
+  kicad_em_sim applies it too.
 * `<name>.png`: a picture from the top. Top copper is red, bottom copper
   blue (purple where both), inner copper green, holes dark, and ports amber
   rings.
@@ -63,8 +67,11 @@ gerber2ems does). The board file keeps each shape's net, so the model
 names its nets and ports by the board's own names, and a port is a pad
 by reference (`J1.A6`). Pads are drawn from their shape: circle, rect,
 oval, roundrect, and custom (its anchor and its polygon, circle and
-rectangle primitives). Only the nets in `nets` are in the model, so give
-the reference net (such as `GND`) too.
+rectangle primitives; a chamfered pad fails). A via's pads are drawn on
+each layer it joins, and an oval drill is a slot. Only the nets in `nets`
+are in the model, so give the reference net (such as `GND`) too. A zone
+saved without its fill fails: fill the zones in KiCad first. The board's
+outline is the box of its Edge.Cuts items, footprints' included.
 
 The board's file has no stackup unless KiCad's board setup gave it one,
 so it is given here, one dielectric per gap between copper layers. The
@@ -80,12 +87,12 @@ toolchain, and nothing is solved. The same board gives the same bytes.
 | Name  | Description | Type | Mandatory | Default |
 | :------------- | :------------- | :------------- | :------------- | :------------- |
 | <a id="kicad_em_model-name"></a>name |  A unique name for this target.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
-| <a id="kicad_em_model-copper_thickness"></a>copper_thickness |  Each copper layer's thickness, in mm. The default is 1 oz copper.   | String | optional |  `"0.035"`  |
+| <a id="kicad_em_model-copper_thickness"></a>copper_thickness |  Each copper layer's thickness, in mm: `"0.035"` or `"0.035mm"`. The default is 1 oz copper.   | String | optional |  `"0.035"`  |
 | <a id="kicad_em_model-dielectrics"></a>dielectrics |  The dielectric layers, top first, one per gap between copper layers: `"<thickness>mm <epsilon_r> <loss tangent>"`, such as `"1.51mm 4.5 0.02"`.   | List of strings | required |  |
 | <a id="kicad_em_model-nets"></a>nets |  The nets to model, by the board's names. The reference net (`GND`) too.   | List of strings | required |  |
 | <a id="kicad_em_model-pcb"></a>pcb |  The board: a `.kicad_pcb` (KiCad 7 to 9).   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
-| <a id="kicad_em_model-ports"></a>ports |  Ports: a name to a pad, `REF.PAD`, such as `{"P1": "J1.A6"}`. Each pad's net must be one of `nets`.   | <a href="https://bazel.build/rules/lib/core/dict">Dictionary: String -> String</a> | optional |  `{}`  |
-| <a id="kicad_em_model-px_per_mm"></a>px_per_mm |  The picture's pixels per mm.   | Integer | optional |  `20`  |
+| <a id="kicad_em_model-ports"></a>ports |  Ports: a name to a pad, `REF.PAD`, such as `{"P1": "J1.A6"}`. Each pad's net must be one of `nets`, and its name its own (a pad name that several pads share fails). A through-hole pad's port is on its first layer; `REF.PAD@B.Cu` puts it on another.   | <a href="https://bazel.build/rules/lib/core/dict">Dictionary: String -> String</a> | optional |  `{}`  |
+| <a id="kicad_em_model-px_per_mm"></a>px_per_mm |  The picture's pixels per mm: 1 to 100.   | Integer | optional |  `20`  |
 
 
 <a id="tool_toolchain"></a>

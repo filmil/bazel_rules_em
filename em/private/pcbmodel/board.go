@@ -26,12 +26,14 @@ type Shape struct {
 	Points     []Pt
 }
 
-// Hole is a plated hole: a via or a through-hole pad's barrel.
+// Hole is a plated hole: a via or a through-hole pad's barrel. A slot
+// (an oval drill) has its outline in Slot; a round hole has none.
 type Hole struct {
 	Net         string
 	At          Pt
 	Drill, Size float64
 	Layers      []string // the copper layers it joins, top first
+	Slot        []Pt
 }
 
 // Pad is a pad that a port can name, as "REF.PAD".
@@ -50,6 +52,11 @@ type Board struct {
 	Holes     []Hole
 	Pads      map[string]Pad
 	Nets      map[string]bool
+	// Shared counts the pads of each "REF.PAD" that more than one pad
+	// has, such as a connector's shield pins: a port cannot name one.
+	Shared map[string]int
+	// Unfilled are the nets of zones saved without their fill.
+	Unfilled map[string]bool
 }
 
 func rot(p Pt, deg float64) Pt {
@@ -183,6 +190,9 @@ func padOutlines(pad *Node) ([][]Pt, error) {
 		w, _ = s.Float(0)
 		h, _ = s.Float(1)
 	}
+	if pad.One("chamfer") != nil && num(pad, "chamfer_ratio", 0) > 0 {
+		return nil, fmt.Errorf("a chamfered pad: not drawn")
+	}
 	switch shape {
 	case "circle":
 		return [][]Pt{circle(Pt{}, w/2)}, nil
@@ -202,7 +212,11 @@ func padOutlines(pad *Node) ([][]Pt, error) {
 			anchor = circle(Pt{}, w/2)
 		}
 		out := [][]Pt{anchor}
-		for _, p := range pad.One("primitives").Kids[1:] {
+		prims := pad.One("primitives")
+		if prims == nil {
+			return out, nil
+		}
+		for _, p := range prims.Kids[1:] {
 			switch p.Head() {
 			case "gr_poly":
 				out = append(out, ptsOf(p))
@@ -227,17 +241,21 @@ func padOutlines(pad *Node) ([][]Pt, error) {
 				}
 				out = append(out, []Pt{{a.X, a.Y}, {b.X, a.Y}, {b.X, b.Y}, {a.X, b.Y}})
 			default:
-				return nil, fmt.Errorf("custom pad primitive %s: not read", p.Head())
+				return nil, fmt.Errorf("custom pad primitive %s: not drawn", p.Head())
 			}
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("pad shape %q: not read", shape)
+	return nil, fmt.Errorf("pad shape %q: not drawn", shape)
 }
 
-func copperLayers(board *Node) []string {
+func copperLayers(board *Node) ([]string, error) {
+	layers := board.One("layers")
+	if layers == nil {
+		return nil, fmt.Errorf("the board has no (layers ...)")
+	}
 	var names []string
-	for _, l := range board.One("layers").Kids[1:] {
+	for _, l := range layers.Kids[1:] {
 		if n := l.Arg(0).Text(); l.List && strings.HasSuffix(n, ".Cu") {
 			names = append(names, n)
 		}
@@ -253,7 +271,7 @@ func copperLayers(board *Node) []string {
 		return k
 	}
 	sort.Slice(names, func(i, j int) bool { return key(names[i]) < key(names[j]) })
-	return names
+	return names, nil
 }
 
 func expand(names []string, copper []string) []string {
@@ -289,6 +307,33 @@ func layerNames(n *Node) []string {
 	return out
 }
 
+// padDrill reads a pad's (drill [oval] D [H] (offset X Y)): the hole's width
+// and height (equal for a round hole) and the offset of the pad's copper
+// from the hole.
+func padDrill(pad *Node) (w, h float64, off Pt, ok bool) {
+	d := pad.One("drill")
+	if d == nil {
+		return 0, 0, Pt{}, false
+	}
+	var nums []float64
+	for _, a := range d.Kids[1:] {
+		if a.IsNum {
+			nums = append(nums, a.Num)
+		}
+	}
+	if o := d.One("offset"); o != nil {
+		off.X, _ = o.Float(0)
+		off.Y, _ = o.Float(1)
+	}
+	switch len(nums) {
+	case 0:
+		return 0, 0, off, false
+	case 1:
+		return nums[0], nums[0], off, nums[0] > 0
+	}
+	return nums[0], nums[1], off, nums[0] > 0
+}
+
 // ReadBoard reads a .kicad_pcb (KiCad 7 to 9).
 func ReadBoard(text string) (*Board, error) {
 	root, err := Parse(text)
@@ -298,7 +343,12 @@ func ReadBoard(text string) (*Board, error) {
 	if root.Head() != "kicad_pcb" {
 		return nil, fmt.Errorf("not a KiCad board: it starts with (%s", root.Head())
 	}
-	b := &Board{Layers: copperLayers(root), Pads: map[string]Pad{}, Nets: map[string]bool{}}
+	layers, err := copperLayers(root)
+	if err != nil {
+		return nil, err
+	}
+	b := &Board{Layers: layers, Pads: map[string]Pad{}, Nets: map[string]bool{},
+		Shared: map[string]int{}, Unfilled: map[string]bool{}}
 	if len(b.Layers) < 2 {
 		return nil, fmt.Errorf("the board has %d copper layers", len(b.Layers))
 	}
@@ -375,20 +425,117 @@ func ReadBoard(text string) (*Board, error) {
 		if i0 > i1 {
 			i0, i1 = i1, i0
 		}
-		b.Holes = append(b.Holes, Hole{netOf(v), at, num(v, "drill", 0), num(v, "size", 0), b.Layers[i0 : i1+1]})
+		net, size := netOf(v), num(v, "size", 0)
+		span := b.Layers[i0 : i1+1]
+		b.Holes = append(b.Holes, Hole{Net: net, At: at, Drill: num(v, "drill", 0), Size: size, Layers: span})
+		// Its pad on each layer it joins, where tracks and pours meet it.
+		for _, l := range span {
+			b.Shapes = append(b.Shapes, Shape{l, net, circle(at, size/2)})
+		}
 	}
 	for _, z := range root.All("zone") {
 		net := netOf(z)
 		if net == "" {
 			net = str(z, "net_name")
 		}
-		for _, fp := range z.All("filled_polygon") {
+		fills := z.All("filled_polygon")
+		if len(fills) == 0 && z.One("keepout") == nil {
+			b.Unfilled[net] = true
+		}
+		for _, fp := range fills {
 			b.Shapes = append(b.Shapes, Shape{str(fp, "layer"), net, ptsOf(fp)})
 		}
 	}
 
+	minX, minY := math.Inf(1), math.Inf(1)
+	maxX, maxY := math.Inf(-1), math.Inf(-1)
+	grow := func(p Pt) {
+		minX, maxX = math.Min(minX, p.X), math.Max(maxX, p.X)
+		minY, maxY = math.Min(minY, p.Y), math.Max(maxY, p.Y)
+	}
+	// edges grows the outline's box by the Edge.Cuts items of n, each
+	// point moved by place (a footprint's position and angle).
+	edges := func(n *Node, prefix string, place func(Pt) Pt) error {
+		for _, kind := range []string{"line", "arc", "rect", "circle", "poly", "bezier"} {
+			for _, g := range n.All(prefix + kind) {
+				if str(g, "layer") != "Edge.Cuts" {
+					continue
+				}
+				get := func(name string) (Pt, error) {
+					p, err := xy(g, name)
+					if err != nil {
+						return Pt{}, fmt.Errorf("an Edge.Cuts %s%s: %v", prefix, kind, err)
+					}
+					return p, nil
+				}
+				switch kind {
+				case "circle":
+					c, err := get("center")
+					if err != nil {
+						return err
+					}
+					e, err := get("end")
+					if err != nil {
+						return err
+					}
+					for _, p := range circle(c, math.Hypot(e.X-c.X, e.Y-c.Y)) {
+						grow(place(p))
+					}
+				case "poly", "bezier":
+					// A bezier lies inside its control points' hull.
+					for _, p := range ptsOf(g) {
+						grow(place(p))
+					}
+				case "arc":
+					a, err := get("start")
+					if err != nil {
+						return err
+					}
+					m, err := get("mid")
+					if err != nil {
+						return err
+					}
+					e, err := get("end")
+					if err != nil {
+						return err
+					}
+					for _, p := range arcPoints(a, m, e) {
+						grow(place(p))
+					}
+				case "rect":
+					a, err := get("start")
+					if err != nil {
+						return err
+					}
+					e, err := get("end")
+					if err != nil {
+						return err
+					}
+					for _, p := range []Pt{a, {e.X, a.Y}, e, {a.X, e.Y}} {
+						grow(place(p))
+					}
+				default:
+					for _, name := range []string{"start", "end"} {
+						p, err := get(name)
+						if err != nil {
+							return err
+						}
+						grow(place(p))
+					}
+				}
+			}
+		}
+		return nil
+	}
+	if err := edges(root, "gr_", func(p Pt) Pt { return p }); err != nil {
+		return nil, err
+	}
+
 	for _, fp := range root.All("footprint") {
 		at := fp.One("at")
+		if at == nil {
+			return nil, fmt.Errorf("a footprint with no (at x y)")
+		}
 		fx, _ := at.Float(0)
 		fy, _ := at.Float(1)
 		frot, _ := at.Float(2)
@@ -403,14 +550,23 @@ func ReadBoard(text string) (*Board, error) {
 				ref = t.Arg(1).Text()
 			}
 		}
+		place := func(p Pt) Pt {
+			o := rot(p, frot)
+			return Pt{fx + o.X, fy + o.Y}
+		}
+		if err := edges(fp, "fp_", place); err != nil {
+			return nil, fmt.Errorf("%s: %v", ref, err)
+		}
 		for _, pad := range fp.All("pad") {
 			pat := pad.One("at")
+			if pat == nil {
+				return nil, fmt.Errorf("%s: a pad with no (at x y)", ref)
+			}
 			px, _ := pat.Float(0)
 			py, _ := pat.Float(1)
 			// The pad's angle in the file already includes the footprint's.
 			prot, _ := pat.Float(2)
-			o := rot(Pt{px, py}, frot)
-			c := Pt{fx + o.X, fy + o.Y}
+			c := place(Pt{px, py})
 			layers := expand(layerNames(pad), b.Layers)
 			if len(layers) == 0 {
 				continue
@@ -418,10 +574,19 @@ func ReadBoard(text string) (*Board, error) {
 			net := netOf(pad)
 			if name := pad.Arg(0).Text(); name != "" {
 				key := ref + "." + name
-				if _, dup := b.Pads[key]; !dup {
+				if _, dup := b.Pads[key]; dup {
+					if b.Shared[key] == 0 {
+						b.Shared[key] = 1
+					}
+					b.Shared[key]++
+				} else {
 					b.Pads[key] = Pad{net, c, layers}
 				}
 			}
+			dw, dh, off, hole := padDrill(pad)
+			// The copper sits at the hole plus the drill's offset.
+			o := rot(off, prot)
+			cc := Pt{c.X + o.X, c.Y + o.Y}
 			outlines, err := padOutlines(pad)
 			if err != nil {
 				return nil, fmt.Errorf("%s pad %s: %v", ref, pad.Arg(0).Text(), err)
@@ -430,58 +595,29 @@ func ReadBoard(text string) (*Board, error) {
 				pts := make([]Pt, len(poly))
 				for k, q := range poly {
 					r := rot(q, prot)
-					pts[k] = Pt{c.X + r.X, c.Y + r.Y}
+					pts[k] = Pt{cc.X + r.X, cc.Y + r.Y}
 				}
 				for _, l := range layers {
 					b.Shapes = append(b.Shapes, Shape{l, net, pts})
 				}
 			}
-			if pad.Arg(1).Text() == "thru_hole" {
-				if d := pad.One("drill"); d != nil {
-					if dia, err := d.Float(0); err == nil {
-						w, _ := pad.One("size").Float(0)
-						b.Holes = append(b.Holes, Hole{net, c, dia, w, b.Layers})
+			if pad.Arg(1).Text() == "thru_hole" && hole {
+				w, _ := pad.One("size").Float(0)
+				h := Hole{Net: net, At: c, Drill: math.Min(dw, dh), Size: w, Layers: layers}
+				if dw != dh {
+					r := math.Min(dw, dh) / 2
+					var a, e Pt
+					if dw > dh {
+						a, e = Pt{-(dw/2 - r), 0}, Pt{dw/2 - r, 0}
+					} else {
+						a, e = Pt{0, -(dh/2 - r)}, Pt{0, dh/2 - r}
+					}
+					for _, q := range capsule(a, e, r) {
+						t := rot(q, prot)
+						h.Slot = append(h.Slot, Pt{c.X + t.X, c.Y + t.Y})
 					}
 				}
-			}
-		}
-	}
-
-	minX, minY := math.Inf(1), math.Inf(1)
-	maxX, maxY := math.Inf(-1), math.Inf(-1)
-	grow := func(p Pt) {
-		minX, maxX = math.Min(minX, p.X), math.Max(maxX, p.X)
-		minY, maxY = math.Min(minY, p.Y), math.Max(maxY, p.Y)
-	}
-	for _, kind := range []string{"gr_line", "gr_arc", "gr_rect", "gr_circle", "gr_poly"} {
-		for _, g := range root.All(kind) {
-			if str(g, "layer") != "Edge.Cuts" {
-				continue
-			}
-			switch kind {
-			case "gr_circle":
-				c, _ := xy(g, "center")
-				e, _ := xy(g, "end")
-				r := math.Hypot(e.X-c.X, e.Y-c.Y)
-				grow(Pt{c.X - r, c.Y - r})
-				grow(Pt{c.X + r, c.Y + r})
-			case "gr_poly":
-				for _, p := range ptsOf(g) {
-					grow(p)
-				}
-			case "gr_arc":
-				a, _ := xy(g, "start")
-				m, _ := xy(g, "mid")
-				e, _ := xy(g, "end")
-				for _, p := range arcPoints(a, m, e) {
-					grow(p)
-				}
-			default:
-				for _, name := range []string{"start", "end"} {
-					if p, err := xy(g, name); err == nil {
-						grow(p)
-					}
-				}
+				b.Holes = append(b.Holes, h)
 			}
 		}
 	}
