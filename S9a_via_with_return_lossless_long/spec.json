@@ -1,0 +1,17 @@
+{
+ "nets": [
+  "SIG",
+  "GND"
+ ],
+ "ports": {
+  "P1": "J1.1",
+  "P2": "J2.1"
+ },
+ "dielectrics": [
+  "0.2mm 4.3 0",
+  "1.06mm 4.3 0",
+  "0.2mm 4.3 0"
+ ],
+ "note": "0.36 mm trace on F.Cu (over In1 GND) to a via at mid-length, then on B.Cu (over In2 GND), 4-layer; 1 mm antipads in both planes; a GND via 1 mm away joins the planes; lossless (tan d 0) and 60000 steps (a longer record), to check the low-frequency S21",
+ "steps": 60000
+}
