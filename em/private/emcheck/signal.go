@@ -49,9 +49,11 @@ func DCGrid(freqs []float64) (float64, error) {
 	if len(freqs) < 2 {
 		return 0, fmt.Errorf("%d frequencies: the TDR needs a grid", len(freqs))
 	}
-	df := freqs[0]
+	// The step from the whole span, so rounding in the first frequency is
+	// not multiplied along the grid.
+	df := freqs[len(freqs)-1] / float64(len(freqs))
 	for k, f := range freqs {
-		if math.Abs(f-float64(k+1)*df) > 1e-3*df {
+		if math.Abs(f-float64(k+1)*df) > 1e-3*f {
 			return 0, fmt.Errorf("frequency %d is %g Hz, not %d x %g: the TDR needs a grid that starts at "+
 				"its step (such as f_start 10MHz, f_stop 10GHz, points 1000)", k+1, f, k+1, df)
 		}
@@ -59,12 +61,51 @@ func DCGrid(freqs []float64) (float64, error) {
 	return df, nil
 }
 
+// DC is a parameter's value at 0 Hz, from its values at df, 2 df, ...: a
+// real network's S is real at DC, so this is the lowest frequency's
+// magnitude times the cosine of the phase extrapolated to 0 Hz along the
+// first few frequencies (a line's delay turns the phase even at df).
+func DC(s []complex128) float64 {
+	k := len(s)
+	if k > 4 {
+		k = 4
+	}
+	if k == 1 {
+		return real(s[0])
+	}
+	// Unwrapped phase at df, 2 df, ...; a line through it back to 0.
+	ph := make([]float64, k)
+	for i := 0; i < k; i++ {
+		ph[i] = cmplx.Phase(s[i])
+		if i > 0 {
+			for ph[i]-ph[i-1] > math.Pi {
+				ph[i] -= 2 * math.Pi
+			}
+			for ph[i]-ph[i-1] < -math.Pi {
+				ph[i] += 2 * math.Pi
+			}
+		}
+	}
+	var sx, sy, sxx, sxy float64
+	for i := 0; i < k; i++ {
+		x := float64(i + 1)
+		sx, sy, sxx, sxy = sx+x, sy+ph[i], sxx+x*x, sxy+x*ph[i]
+	}
+	n := float64(k)
+	slope := (n*sxy - sx*sy) / (n*sxx - sx*sx)
+	at0 := (sy - slope*sx) / n
+	// The magnitude times the cosine of the phase at 0 Hz: a delay's
+	// phase extrapolates to 0 (or pi), and a reflection that vanishes like
+	// j omega to pi/2, so to 0.
+	return cmplx.Abs(s[0]) * math.Cos(at0)
+}
+
 // Step is the response to a Hann-windowed step of a parameter s given
-// on df, 2 df, ... (DC is taken as s at df, made real): time in s and the
+// on df, 2 df, ... (its DC value from DC): time in s and the
 // response, from t = 0. It is kicad_em_sim's TDR step: a reflection gives
 // the TDR, a transmission the TDT.
 func Step(s []complex128, df float64) ([]float64, []float64) {
-	spec := append([]complex128{complex(real(s[0]), 0)}, s...)
+	spec := append([]complex128{complex(DC(s), 0)}, s...)
 	n := len(spec)
 	// The output length: the next power of two at or above 2 (n - 1) pad.
 	m := 1
@@ -111,23 +152,30 @@ func TDR(s11 []complex128, df, z0 float64) ([]float64, []float64) {
 	return t, z
 }
 
-// Arrival is when a transmission's step response first reaches half of
-// its final value: the line's delay, measured on its first edge, before
-// any reflection from a mismatch arrives.
+// ArrivalLevel is the fraction of its DC value at which a step through a
+// line is timed. A mismatched line's first edge rises only to 1 - G^2 of
+// it (G the reflection at each end) until reflections arrive, so the level
+// is a quarter: a line of up to 14 times the ports' impedance reaches it on
+// its first edge.
+const ArrivalLevel = 0.25
+
+// Arrival is when a transmission's step response first reaches
+// ArrivalLevel of its DC value: the line's delay, measured on its first
+// edge, before any reflection arrives.
 func Arrival(s21 []complex128, df float64) (float64, error) {
 	t, v := Step(s21, df)
-	final := real(s21[0]) // at the lowest frequency, about DC
+	final := DC(s21)
 	if math.Abs(final) < 0.1 {
-		return 0, fmt.Errorf("the transmission at %g Hz is %.3f: too little gets through to time it", df, final)
+		return 0, fmt.Errorf("the transmission at DC is %.3f: too little gets through to time it", final)
 	}
-	half := final / 2
+	half := final * ArrivalLevel
 	for i := 1; i < len(v); i++ {
 		if (v[i-1]-half)*(v[i]-half) <= 0 && v[i] != v[i-1] {
 			// Linear between the two samples.
 			return t[i-1] + (half-v[i-1])/(v[i]-v[i-1])*(t[i]-t[i-1]), nil
 		}
 	}
-	return 0, fmt.Errorf("the step never reaches half its final value")
+	return 0, fmt.Errorf("the step never reaches %g of its DC value", ArrivalLevel)
 }
 
 // Single is the reflection or transmission from port j to port i.
@@ -139,21 +187,15 @@ func (nw *Network) Single(i, j int) []complex128 {
 	return out
 }
 
-// Mixed is a mixed-mode parameter between two pairs, each (positive,
-// negative) port: dd differential to differential, cd differential to
-// common.
-func (nw *Network) Mixed(kind string, to, from [2]int) []complex128 {
+// Sdd is the differential-to-differential parameter between two pairs,
+// each (positive, negative) port.
+func (nw *Network) Sdd(to, from [2]int) []complex128 {
 	out := make([]complex128, len(nw.Freqs))
 	p2, n2 := to[0], to[1]
 	p1, n1 := from[0], from[1]
 	for k := range out {
 		s := nw.S[k]
-		switch kind {
-		case "dd":
-			out[k] = (s[p2][p1] - s[p2][n1] - s[n2][p1] + s[n2][n1]) / 2
-		case "cd":
-			out[k] = (s[p2][p1] - s[p2][n1] + s[n2][p1] - s[n2][n1]) / 2
-		}
+		out[k] = (s[p2][p1] - s[p2][n1] - s[n2][p1] + s[n2][n1]) / 2
 	}
 	return out
 }

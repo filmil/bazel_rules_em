@@ -27,5 +27,22 @@ go_binary(
     srcs = ["cmd/main.go"],
     pure = "on",
     visibility = ["//em/toolchains:__pkg__"],
-    deps = [":emcheck"],
+    deps = [
+        ":emcheck",
+        "@rules_go//go/runfiles",
+    ],
+)
+
+go_test(
+    name = "cmd_test",
+    size = "small",
+    srcs = [
+        "cmd/main.go",
+        "cmd/main_test.go",
+    ],
+    pure = "on",
+    deps = [
+        ":emcheck",
+        "@rules_go//go/runfiles",
+    ],
 )

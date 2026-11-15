@@ -3,9 +3,9 @@
 // Command emcheck is kicad_em_test's test: it checks a kicad_em_sim's
 // S-parameters against a limits file. It reads, from the environment:
 //
-//   - EMCHECK_TOUCHSTONE: the Touchstone file, relative to the runfiles;
+//   - EMCHECK_TOUCHSTONE: the Touchstone file, a runfiles location;
 //   - EMCHECK_PORTS: the ports' names, comma-separated, in its order;
-//   - EMCHECK_LIMITS: the limits file;
+//   - EMCHECK_LIMITS: the limits file, a runfiles location;
 //   - EMCHECK_EXPECT_FAIL: the checks this board must fail, comma-separated
 //     (a known-bad board), or empty.
 //
@@ -19,8 +19,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/filmil/bazel_rules_em/em/private/emcheck"
 )
+
+// path resolves a runfiles location; a path that exists as given (an
+// absolute one, in tests) is used as it is.
+func path(loc string) (string, error) {
+	if _, err := os.Stat(loc); err == nil {
+		return loc, nil
+	}
+	return runfiles.Rlocation(loc)
+}
 
 func list(s string) []string {
 	var out []string
@@ -33,7 +43,10 @@ func list(s string) []string {
 }
 
 func run() error {
-	ts := os.Getenv("EMCHECK_TOUCHSTONE")
+	ts, err := path(os.Getenv("EMCHECK_TOUCHSTONE"))
+	if err != nil {
+		return err
+	}
 	data, err := os.ReadFile(ts)
 	if err != nil {
 		return err
@@ -42,7 +55,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	ld, err := os.ReadFile(os.Getenv("EMCHECK_LIMITS"))
+	lp, err := path(os.Getenv("EMCHECK_LIMITS"))
+	if err != nil {
+		return err
+	}
+	ld, err := os.ReadFile(lp)
 	if err != nil {
 		return err
 	}

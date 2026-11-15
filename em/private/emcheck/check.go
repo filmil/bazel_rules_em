@@ -124,6 +124,9 @@ func (e *evaluator) pair(names []string) ([2]int, error) {
 	if len(names) != 2 {
 		return [2]int{}, fmt.Errorf("a pair is two ports, positive and negative, not %d", len(names))
 	}
+	if names[0] == names[1] {
+		return [2]int{}, fmt.Errorf("a pair is two different ports, not %s twice", names[0])
+	}
 	p, err := e.port(names[0])
 	if err != nil {
 		return [2]int{}, err
@@ -146,14 +149,127 @@ func (e *evaluator) upTo(c Check) (int, float64, error) {
 	if k == 0 {
 		return 0, 0, fmt.Errorf("up_to %s is below the band's first frequency, %g Hz", c.UpTo, e.nw.Freqs[0])
 	}
+	if last := e.nw.Freqs[len(e.nw.Freqs)-1]; f > last*(1+1e-9) {
+		return 0, 0, fmt.Errorf("up_to %s is above the band's last frequency, %g Hz: the simulation does not "+
+			"reach it", c.UpTo, last)
+	}
 	return k, f, nil
 }
 
 func ohm(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) + " ohm" }
 func db(v float64) string  { return strconv.FormatFloat(v, 'f', 2, 64) + " dB" }
 
+// fields lists the fields a check sets, by their JSON names.
+func fields(c Check) map[string]bool {
+	set := map[string]bool{}
+	add := func(name string, on bool) {
+		if on {
+			set[name] = true
+		}
+	}
+	add("port", c.Port != "")
+	add("pair", c.Pair != nil)
+	add("from", c.From != "")
+	add("to", c.To != "")
+	add("from_pair", c.FromPair != nil)
+	add("to_pair", c.ToPair != nil)
+	add("positive", c.Positive != nil)
+	add("negative", c.Negative != nil)
+	add("up_to", c.UpTo != "")
+	add("from_ps", c.FromPs != 0)
+	add("to_ps", c.ToPs != 0)
+	add("min_ohm", c.MinOhm != nil)
+	add("max_ohm", c.MaxOhm != nil)
+	add("max_db", c.MaxDB != nil)
+	add("min_db", c.MinDB != nil)
+	add("max_ps", c.MaxPs != nil)
+	return set
+}
+
+// allowed is what each kind takes, besides name and kind.
+var allowed = map[string][]string{
+	"impedance":      {"port", "pair", "from_ps", "to_ps", "min_ohm", "max_ohm"},
+	"insertion_loss": {"from", "to", "from_pair", "to_pair", "up_to", "max_db"},
+	"return_loss":    {"port", "pair", "up_to", "min_db"},
+	"skew":           {"positive", "negative", "max_ps"},
+}
+
+// validate refuses a check that sets fields its kind ignores, or that
+// leaves its meaning open, so a typo cannot pass silently.
+func validate(c Check) error {
+	ok, known := allowed[c.Kind]
+	if !known {
+		return fmt.Errorf("kind %q: want impedance, insertion_loss, return_loss or skew", c.Kind)
+	}
+	set := fields(c)
+	for _, a := range ok {
+		delete(set, a)
+	}
+	if len(set) > 0 {
+		var extra []string
+		for f := range set {
+			extra = append(extra, f)
+		}
+		sort.Strings(extra)
+		return fmt.Errorf("a %s check takes no %s", c.Kind, strings.Join(extra, ", "))
+	}
+	one := func(a, b bool, what string) error {
+		if a == b {
+			return fmt.Errorf("give %s", what)
+		}
+		return nil
+	}
+	switch c.Kind {
+	case "impedance", "return_loss":
+		if err := one(c.Port != "", c.Pair != nil, "either port or pair"); err != nil {
+			return err
+		}
+	case "insertion_loss":
+		single := c.From != "" || c.To != ""
+		pairs := c.FromPair != nil || c.ToPair != nil
+		if err := one(single, pairs, "either from and to, or from_pair and to_pair"); err != nil {
+			return err
+		}
+		if single && (c.From == "" || c.To == "") {
+			return fmt.Errorf("give both from and to")
+		}
+		if pairs && (c.FromPair == nil || c.ToPair == nil) {
+			return fmt.Errorf("give both from_pair and to_pair")
+		}
+		if single && c.From == c.To {
+			return fmt.Errorf("from and to are both %s: that is a reflection (return_loss)", c.From)
+		}
+	}
+	nonneg := func(v *float64, what string) error {
+		if v != nil && (*v < 0 || math.IsNaN(*v) || math.IsInf(*v, 0)) {
+			return fmt.Errorf("%s %v: want a finite number, 0 or more (dB of loss, ps, ohm are magnitudes)", what, *v)
+		}
+		return nil
+	}
+	for _, x := range []struct {
+		v    *float64
+		what string
+	}{{c.MinOhm, "min_ohm"}, {c.MaxOhm, "max_ohm"}, {c.MaxDB, "max_db"}, {c.MinDB, "min_db"}, {c.MaxPs, "max_ps"}} {
+		if err := nonneg(x.v, x.what); err != nil {
+			return err
+		}
+	}
+	if c.Kind == "impedance" {
+		if c.MinOhm == nil || c.MaxOhm == nil || *c.MinOhm > *c.MaxOhm {
+			return fmt.Errorf("impedance needs min_ohm at most max_ohm")
+		}
+		if c.FromPs < 0 || c.ToPs <= c.FromPs {
+			return fmt.Errorf("impedance needs from_ps, 0 or more, below to_ps")
+		}
+	}
+	return nil
+}
+
 func (e *evaluator) check(c Check) (Result, error) {
 	r := Result{Name: c.Name, Kind: c.Kind}
+	if err := validate(c); err != nil {
+		return r, err
+	}
 	switch c.Kind {
 	case "impedance":
 		if c.MinOhm == nil || c.MaxOhm == nil || c.ToPs <= c.FromPs {
@@ -171,7 +287,7 @@ func (e *evaluator) check(c Check) (Result, error) {
 			if err != nil {
 				return r, err
 			}
-			s11, z0 = e.nw.Mixed("dd", p, p), 2*e.nw.Z0
+			s11, z0 = e.nw.Sdd(p, p), 2*e.nw.Z0
 			what = "differential " + strings.Join(c.Pair, "/")
 		} else {
 			i, err := e.port(c.Port)
@@ -211,7 +327,7 @@ func (e *evaluator) check(c Check) (Result, error) {
 			if err != nil {
 				return r, err
 			}
-			s, what = e.nw.Mixed("dd", b, a), "Sdd "+strings.Join(c.ToPair, "/")+" from "+strings.Join(c.FromPair, "/")
+			s, what = e.nw.Sdd(b, a), "Sdd "+strings.Join(c.ToPair, "/")+" from "+strings.Join(c.FromPair, "/")
 		case c.Kind == "insertion_loss":
 			a, err := e.port(c.From)
 			if err != nil {
@@ -227,7 +343,7 @@ func (e *evaluator) check(c Check) (Result, error) {
 			if err != nil {
 				return r, err
 			}
-			s, what = e.nw.Mixed("dd", p, p), "Sdd "+strings.Join(c.Pair, "/")
+			s, what = e.nw.Sdd(p, p), "Sdd "+strings.Join(c.Pair, "/")
 		default:
 			i, err := e.port(c.Port)
 			if err != nil {
@@ -259,9 +375,6 @@ func (e *evaluator) check(c Check) (Result, error) {
 	case "skew":
 		if c.MaxPs == nil {
 			return r, fmt.Errorf("skew needs max_ps")
-		}
-		if c.UpTo != "" {
-			return r, fmt.Errorf("skew uses the whole band (its step's rise), so it takes no up_to")
 		}
 		df, err := DCGrid(e.nw.Freqs)
 		if err != nil {

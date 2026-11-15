@@ -49,6 +49,9 @@ func ParseTouchstone(name string, data []byte) (*Network, error) {
 			if seenOption {
 				return nil, fmt.Errorf("%s:%d: a second option line", name, ln+1)
 			}
+			if len(nums) > 0 {
+				return nil, fmt.Errorf("%s:%d: the option line after data", name, ln+1)
+			}
 			seenOption = true
 			f := strings.Fields(strings.ToUpper(line[1:]))
 			for i := 0; i < len(f); i++ {
@@ -71,7 +74,7 @@ func ParseTouchstone(name string, data []byte) (*Network, error) {
 						return nil, fmt.Errorf("%s:%d: R with no value", name, ln+1)
 					}
 					v, err := strconv.ParseFloat(f[i+1], 64)
-					if err != nil || v <= 0 {
+					if err != nil || !(v > 0) || math.IsInf(v, 0) {
 						return nil, fmt.Errorf("%s:%d: R %q", name, ln+1, f[i+1])
 					}
 					z0 = v
@@ -84,8 +87,8 @@ func ParseTouchstone(name string, data []byte) (*Network, error) {
 		}
 		for _, x := range strings.Fields(line) {
 			v, err := strconv.ParseFloat(x, 64)
-			if err != nil {
-				return nil, fmt.Errorf("%s:%d: %q is not a number", name, ln+1, x)
+			if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+				return nil, fmt.Errorf("%s:%d: %q is not a finite number", name, ln+1, x)
 			}
 			nums = append(nums, v)
 		}

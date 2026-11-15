@@ -4,6 +4,12 @@
 load(":run_tool.bzl", "HELPERS_TOOLCHAIN_TYPE")
 load(":sim.bzl", "EmSimInfo")
 
+def _rlocation(ctx, f):
+    """f's runfiles location, as rules_go's runfiles library reads it."""
+    if f.short_path.startswith("../"):
+        return f.short_path[3:]
+    return ctx.workspace_name + "/" + f.short_path
+
 def _kicad_em_test_impl(ctx):
     sim = ctx.attr.sim[EmSimInfo]
     checker = ctx.toolchains[HELPERS_TOOLCHAIN_TYPE].helpers.emcheck
@@ -14,7 +20,7 @@ def _kicad_em_test_impl(ctx):
         is_executable = True,
     )
     for name in ctx.attr.expect_fail:
-        if "," in name or not name:
+        if "," in name or not name.strip():
             fail("%s: expect_fail %r: want a check's name" % (ctx.label, name))
     return [
         DefaultInfo(
@@ -22,9 +28,9 @@ def _kicad_em_test_impl(ctx):
             runfiles = ctx.runfiles(files = [sim.dir, ctx.file.limits]).merge(checker.default_runfiles),
         ),
         RunEnvironmentInfo(environment = {
-            "EMCHECK_TOUCHSTONE": sim.dir.short_path + "/" + sim.touchstone,
+            "EMCHECK_TOUCHSTONE": _rlocation(ctx, sim.dir) + "/" + sim.touchstone,
             "EMCHECK_PORTS": ",".join(sim.ports),
-            "EMCHECK_LIMITS": ctx.file.limits.short_path,
+            "EMCHECK_LIMITS": _rlocation(ctx, ctx.file.limits),
             "EMCHECK_EXPECT_FAIL": ",".join(ctx.attr.expect_fail),
         }),
     ]
@@ -71,15 +77,25 @@ names; a pair is (positive, negative) at the same end of the line:
   f_stop, so a feature shorter than that reads closer to the ports'
   impedance than it is. It needs the band's grid to start at its step
   (such as f_start 10MHz, f_stop 10GHz, points 1000), and fails otherwise.
-* `insertion_loss`: the loss from `from` to `to` (or Sdd between pairs),
-  at its worst up to `up_to`, must be at most `max_db`.
-* `return_loss`: the loss of the reflection at a `port` (or Sdd11 of a
-  `pair`), at its worst up to `up_to`, must be at least `min_db`.
+* `insertion_loss`: the loss from `from` to `to`, or Sdd from `from_pair`
+  to `to_pair`, at its worst up to `up_to` (the whole band if left out),
+  must be at most `max_db`.
+* `return_loss`: the loss of the reflection at a `port`, or Sdd11 of a
+  `pair`, at its worst up to `up_to` (the whole band if left out), must be
+  at least `min_db`.
 * `skew`: the arrivals of a step through the `positive` and `negative`
-  lines, each (near port, far port), at half of its final value, must
-  differ by at most `max_ps`. The first edge arrives before any reflection,
-  so a mismatch at the ports does not bend it, and both lines see the same
-  one. It uses the whole band, and the grid rule of `impedance`.
+  lines, each (near port, far port), at a quarter of its DC value, must
+  differ by at most `max_ps`. The arrival is timed on the first edge,
+  before reflections come back; a mismatched line's first edge rises to
+  only 1 - G^2 of the DC value, and a quarter is reached by a line of up to
+  14 times the ports' impedance. Lines of different impedance cross the
+  quarter at different points of their edges, so compare like lines. It
+  uses the whole band, and the grid rule of `impedance`.
+
+Losses are magnitudes in dB: `max_db` and `min_db` are 0 or more. `up_to`
+is a number and Hz, kHz, MHz or GHz, within the band. Each kind takes only
+its own fields, and a check that sets another, or two that exclude each
+other, fails.
 
 The test prints a table of each check, what it measured, its limit and
 its result, and writes it as `report.md` in its undeclared outputs.

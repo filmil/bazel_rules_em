@@ -197,8 +197,10 @@ func TestChecks(t *testing.T) {
 			}
 			var a, b float64
 			fmt.Sscanf(r.Measured[strings.Index(r.Measured, "arrivals")+9:], "%f and %f", &a, &b)
-			if math.Abs(a-200) > 5 || math.Abs(b-212) > 5 {
-				t.Errorf("arrivals %v and %v ps, want 200 and 212", a, b)
+			// Timed at a quarter of the step: up to half a rise
+			// (about 50 ps here) before the delay.
+			if a > 200 || a < 150 || math.Abs(b-a-12) > 0.5 {
+				t.Errorf("arrivals %v and %v ps, want within 50 ps before 200 and 212, 12 apart", a, b)
 			}
 		}
 	}
@@ -250,4 +252,133 @@ func TestLimitErrors(t *testing.T) {
 	if _, err := Run(nw, ports[:3], &Limits{Checks: []Check{{Name: "a", Kind: "skew"}}}); err == nil {
 		t.Error("3 names for 4 ports: no error")
 	}
+}
+
+// coupledPair is a differential pair from its modes: an odd-mode line of
+// zodd and an even-mode line of zeven, both of delay tau. Ports: P1 D+
+// near, P2 D+ far, P3 D- near, P4 D- far.
+func coupledPair(zodd, zeven, tau float64) *Network {
+	nw := &Network{N: 4, Z0: 50, Freqs: grid()}
+	for _, f := range nw.Freqs {
+		d11, d21 := line(zodd, tau, 50, f)
+		c11, c21 := line(zeven, tau, 50, f)
+		// Mode S as a 2x2 per mode: [near, far].
+		dm := [2][2]complex128{{d11, d21}, {d21, d11}}
+		cm := [2][2]complex128{{c11, c21}, {c21, c11}}
+		s := make([][]complex128, 4)
+		for i := range s {
+			s[i] = make([]complex128, 4)
+		}
+		pos := [2]int{0, 1}
+		neg := [2]int{2, 3}
+		for a := 0; a < 2; a++ {
+			for b := 0; b < 2; b++ {
+				same := (dm[a][b] + cm[a][b]) / 2
+				cross := (cm[a][b] - dm[a][b]) / 2
+				s[pos[a]][pos[b]], s[neg[a]][neg[b]] = same, same
+				s[pos[a]][neg[b]], s[neg[a]][pos[b]] = cross, cross
+			}
+		}
+		nw.S = append(nw.S, s)
+	}
+	return nw
+}
+
+func TestCoupledPair(t *testing.T) {
+	nw := coupledPair(45, 70, 300e-12)
+	// Sdd from the single-ended S gives back the odd mode.
+	sdd := nw.Sdd([2]int{0, 2}, [2]int{0, 2})
+	d11, _ := line(45, 300e-12, 50, nw.Freqs[200])
+	if cmplx.Abs(sdd[200]-d11) > 1e-12 {
+		t.Errorf("Sdd11 %v, want the odd mode's %v", sdd[200], d11)
+	}
+	ports := []string{"P1", "P2", "P3", "P4"}
+	l := &Limits{Checks: []Check{
+		{Name: "zdiff", Kind: "impedance", Pair: []string{"P1", "P3"}, FromPs: 150, ToPs: 450, MinOhm: f64(87), MaxOhm: f64(93)},
+		{Name: "zsingle", Kind: "impedance", Port: "P1", FromPs: 150, ToPs: 450, MinOhm: f64(55), MaxOhm: f64(60)},
+		// The odd mode, 45 ohm on 50, reflects at worst
+		// (50^2 - 45^2) / (50^2 + 45^2) = 0.105, -19.6 dB.
+		{Name: "rldiff", Kind: "return_loss", Pair: []string{"P1", "P3"}, UpTo: "2GHz", MinDB: f64(19)},
+		{Name: "skew", Kind: "skew", Positive: []string{"P1", "P2"}, Negative: []string{"P3", "P4"}, MaxPs: f64(1)},
+	}}
+	res, err := Run(nw, ports, l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range res {
+		t.Logf("%s: %s pass=%v", r.Name, r.Measured, r.Pass)
+		// zdiff is 2 x 45; a single line of the pair, driven alone (its
+		// neighbour terminated), sees about 56 ohm, between the modes.
+		if !r.Pass {
+			t.Errorf("%s failed: %s", r.Name, r.Measured)
+		}
+	}
+}
+
+func TestLongLine(t *testing.T) {
+	// 3 ns: the phase has turned 108 degrees at 10 MHz, and more than a
+	// quarter turn sends real(S21) negative there; DC must still be +1.
+	nw := pairNetwork(50, 3e-9, 0)
+	if dc := DC(nw.Single(1, 0)); math.Abs(dc-1) > 1e-6 {
+		t.Errorf("DC of a matched 3 ns line is %v, want 1", dc)
+	}
+	arr, err := Arrival(nw.Single(1, 0), 10e6)
+	if err != nil || math.Abs(arr-3e-9) > 60e-12 {
+		t.Errorf("arrival %v, %v; want about 3 ns", arr, err)
+	}
+	// A reflection behind a delay: an open 3 ns away is +1 at DC.
+	open := make([]complex128, len(nw.Freqs))
+	for k, f := range nw.Freqs {
+		open[k] = cmplx.Rect(1, -2*math.Pi*f*6e-9)
+	}
+	if dc := DC(open); math.Abs(dc-1) > 1e-6 {
+		t.Errorf("DC of a delayed open is %v, want 1", dc)
+	}
+}
+
+func TestValidation(t *testing.T) {
+	nw := pairNetwork(50, 1e-10, 0)
+	ports := []string{"P1", "P2", "P3", "P4"}
+	for what, c := range map[string]Check{
+		"port and pair":     {Name: "a", Kind: "return_loss", Port: "P1", Pair: []string{"P1", "P3"}, MinDB: f64(1)},
+		"neither":           {Name: "a", Kind: "return_loss", MinDB: f64(1)},
+		"impedance up_to":   {Name: "a", Kind: "impedance", Port: "P1", UpTo: "1GHz", FromPs: 0, ToPs: 10, MinOhm: f64(1), MaxOhm: f64(2)},
+		"to_pair alone":     {Name: "a", Kind: "insertion_loss", ToPair: []string{"P2", "P4"}, MaxDB: f64(1)},
+		"from is to":        {Name: "a", Kind: "insertion_loss", From: "P1", To: "P1", MaxDB: f64(1)},
+		"negative min_db":   {Name: "a", Kind: "return_loss", Port: "P1", MinDB: f64(-10)},
+		"min over max":      {Name: "a", Kind: "impedance", Port: "P1", FromPs: 0, ToPs: 10, MinOhm: f64(60), MaxOhm: f64(40)},
+		"negative from_ps":  {Name: "a", Kind: "impedance", Port: "P1", FromPs: -5, ToPs: 10, MinOhm: f64(1), MaxOhm: f64(2)},
+		"pair of one port":  {Name: "a", Kind: "return_loss", Pair: []string{"P1", "P1"}, MinDB: f64(1)},
+		"above the band":    {Name: "a", Kind: "return_loss", Port: "P1", UpTo: "20GHz", MinDB: f64(1)},
+		"skew up_to":        {Name: "a", Kind: "skew", Positive: []string{"P1", "P2"}, Negative: []string{"P3", "P4"}, UpTo: "1GHz", MaxPs: f64(1)},
+		"loss with min_ohm": {Name: "a", Kind: "insertion_loss", From: "P1", To: "P2", MaxDB: f64(1), MinOhm: f64(1)},
+	} {
+		if _, err := Run(nw, ports, &Limits{Checks: []Check{c}}); err == nil {
+			t.Errorf("%s: no error", what)
+		}
+	}
+	for _, bad := range []string{
+		"# Hz S RI\n1 NaN 0\n",
+		"# Hz S RI R NaN\n1 0 0\n",
+		"1 0 0\n# Hz S RI\n2 0 0\n",
+	} {
+		if _, err := ParseTouchstone("x.s1p", []byte(bad)); err == nil {
+			t.Errorf("ParseTouchstone(%q): no error", bad)
+		}
+	}
+	// A 3000-point grid written with 6 digits, as %g does: still k * df.
+	var fs []float64
+	for k := 1; k <= 3000; k++ {
+		v, _ := strconvParse(fmt.Sprintf("%.6g", float64(k)*1e10/3000))
+		fs = append(fs, v)
+	}
+	if _, err := DCGrid(fs); err != nil {
+		t.Errorf("a rounded 3000-point grid: %v", err)
+	}
+}
+
+func strconvParse(s string) (float64, error) {
+	var v float64
+	_, err := fmt.Sscanf(s, "%g", &v)
+	return v, err
 }
