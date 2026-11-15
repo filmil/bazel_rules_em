@@ -391,6 +391,10 @@ def simulate(out_dir, params, run):
         w("* Ports: lumped, %g ohm, from the pad to the nearest copper layer with copper under it.\n" % z0)
         w("* TDR: a step of %.0f ps rise time (10 to 90 %%), over the %.0f ps each run simulated.\n"
           % (rise * 1e12, t_end * 1e12))
+        resolved = 1.0 / t_end
+        if f_start < resolved:
+            w("* Below %.3g MHz (1 / the %.0f ps each run simulated), S comes from a record too short to "
+              "resolve it: give more steps to trust the band's low end.\n" % (resolved / 1e6, t_end * 1e12))
         for note in notes:
             w("* Note: %s.\n" % note)
         w("\n")

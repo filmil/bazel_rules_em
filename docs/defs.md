@@ -142,12 +142,19 @@ ports take N runs. The copper is drawn as sheets of no thickness, so the
 mesh needs no cells as thin as the copper. The mesh has lines at each
 copper shape's edges and centre, and is at most `mesh_mm`. `air_mm` of air
 lies around the board, and its outer 8 cells absorb (PML), so it must be at
-least 8 `mesh_mm`. Each run takes exactly `steps` time steps: openEMS
+least 8 `mesh_mm`. Each run takes exactly `steps` time steps (the report
+gives the time they simulate; frequencies below 1 / that time are not
+resolved, and the report says so): openEMS
 checks its own end criterion at wall-clock intervals, so stopping on it
 would make the result depend on the machine's speed. Give enough steps for
 the pulse to leave the board (the report of a run with more steps shows
 whether the S-parameters still move). The dielectric's loss tangent is
-applied at the band's centre.
+applied at the band's centre, as a conductivity (openEMS's simple
+materials have no other loss): loss is about right there, overstated
+below it, and the dielectric conducts at DC, so planes separated only by
+it are joined by a resistance they do not have. For the low end of the
+band, or for return paths through plane capacitance, give a loss tangent
+of 0.
 
 openEMS runs its multithreaded engine with `threads` threads, so the same
 model gives the same bytes. FDTD is slow: tag the target `fdtd`, and keep
