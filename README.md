@@ -23,9 +23,9 @@ Only Linux x86_64 hosts are supported.
 
 ## Status
 
-The openEMS toolchain and `kicad_em_model` are here. Next come
-`kicad_em_sim` and `kicad_em_test`, one pull request each;
-https://github.com/filmil/bazel_rules_em/issues/1 has the plan.
+The openEMS toolchain, `kicad_em_model` and `kicad_em_sim` are here. Next
+comes `kicad_em_test`; https://github.com/filmil/bazel_rules_em/issues/1 has
+the plan.
 
 What works now:
 
@@ -33,6 +33,10 @@ What works now:
   `.kicad_pcb` itself so that nets and ports keep the board's names. It
   writes the model as JSON, as CSXCAD geometry (`model.xml`) and as a
   picture, and runs no solver.
+* **`kicad_em_sim`**: solves a model with openEMS, each port excited in
+  turn, and writes the S-parameters (Touchstone), plots of |S|, input
+  impedance and TDR, and a report. Each run takes a fixed number of time
+  steps, so the same model gives the same bytes.
 * **The openEMS toolchain** (`@hdlf_rules_em//em:toolchain_type`), with one
   tool, `openems`: a runner that solves a simulation script with openEMS
   d686f1d and CSXCAD 626b99f on CPython 3.12. It always runs openEMS's
@@ -83,7 +87,7 @@ common --registry=https://bcr.bazel.build
 `BUILD.bazel`:
 
 ```starlark
-load("@hdlf_rules_em//em:defs.bzl", "kicad_em_model")
+load("@hdlf_rules_em//em:defs.bzl", "kicad_em_model", "kicad_em_sim")
 
 # The USB pair of a two-layer 1.6 mm board, from the connector to the
 # microcontroller.
@@ -93,6 +97,16 @@ kicad_em_model(
     nets = ["USB_DP", "USB_DM", "GND"],
     ports = {"P1": "J1.A6", "P2": "J1.A7", "P3": "U1.18", "P4": "U1.17"},
     dielectrics = ["1.51mm 4.5 0.02"],
+)
+
+# Its S-parameters, impedance and TDR, from 100 MHz to 6 GHz. It runs
+# the solver: tag it fdtd.
+kicad_em_sim(
+    name = "usb_sim",
+    model = ":usb_model",
+    f_start = "100MHz",
+    f_stop = "6GHz",
+    tags = ["fdtd"],
 )
 ```
 

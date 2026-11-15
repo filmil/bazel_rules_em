@@ -92,14 +92,14 @@
 	)
 	(segment
 		(start 110 104.5)
-		(end 117.5 104.5)
+		(end 118 104.5)
 		(width 0.2)
 		(layer "F.Cu")
 		(net 2)
 	)
 	(segment
 		(start 102.5 105.5)
-		(end 117.5 105.5)
+		(end 118 105.5)
 		(width 0.2)
 		(layer "F.Cu")
 		(net 3)
