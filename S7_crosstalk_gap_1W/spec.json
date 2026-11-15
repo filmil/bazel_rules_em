@@ -1,0 +1,19 @@
+{
+ "nets": [
+  "AGG",
+  "VIC",
+  "GND"
+ ],
+ "ports": {
+  "P1": "J1.1",
+  "P2": "J2.1",
+  "P3": "J3.1",
+  "P4": "J4.1"
+ },
+ "dielectrics": [
+  "0.2mm 4.3 0.02",
+  "1.06mm 4.3 0.02",
+  "0.2mm 4.3 0.02"
+ ],
+ "note": "two 0.3 mm traces, 0.3 mm edge to edge (1W), 0.2 mm over GND, 4-layer; P1/P2 aggressor near/far, P3/P4 victim near/far: NEXT = S31, FEXT = S41"
+}

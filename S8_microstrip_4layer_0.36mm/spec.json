@@ -1,0 +1,16 @@
+{
+ "nets": [
+  "SIG",
+  "GND"
+ ],
+ "ports": {
+  "P1": "J1.1",
+  "P2": "J2.1"
+ },
+ "dielectrics": [
+  "0.2mm 4.3 0.02",
+  "1.06mm 4.3 0.02",
+  "0.2mm 4.3 0.02"
+ ],
+ "note": "0.36 mm microstrip, 0.2 mm prepreg to GND, 4-layer"
+}
