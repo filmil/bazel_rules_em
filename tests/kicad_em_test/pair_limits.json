@@ -1,0 +1,35 @@
+{
+  "checks": [
+    {
+      "name": "pair_impedance",
+      "kind": "impedance",
+      "pair": ["P1", "P2"],
+      "from_ps": 80,
+      "to_ps": 160,
+      "min_ohm": 140,
+      "max_ohm": 185
+    },
+    {
+      "name": "pair_loss",
+      "kind": "insertion_loss",
+      "from_pair": ["P1", "P2"],
+      "to_pair": ["P3", "P4"],
+      "up_to": "1GHz",
+      "max_db": 1.5
+    },
+    {
+      "name": "pair_skew_loose",
+      "kind": "skew",
+      "positive": ["P1", "P3"],
+      "negative": ["P2", "P4"],
+      "max_ps": 8
+    },
+    {
+      "name": "pair_skew_tight",
+      "kind": "skew",
+      "positive": ["P1", "P3"],
+      "negative": ["P2", "P4"],
+      "max_ps": 2
+    }
+  ]
+}

@@ -23,9 +23,8 @@ Only Linux x86_64 hosts are supported.
 
 ## Status
 
-The openEMS toolchain, `kicad_em_model` and `kicad_em_sim` are here. Next
-comes `kicad_em_test`; https://github.com/filmil/bazel_rules_em/issues/1 has
-the plan.
+The openEMS toolchain, `kicad_em_model`, `kicad_em_sim` and `kicad_em_test`
+are here: the four steps of https://github.com/filmil/bazel_rules_em/issues/1.
 
 What works now:
 
@@ -37,6 +36,10 @@ What works now:
   turn, and writes the S-parameters (Touchstone), plots of |S|, input
   impedance and TDR, and a report. Each run takes a fixed number of time
   steps, so the same model gives the same bytes.
+* **`kicad_em_test`**: checks a simulation against limits in a JSON file,
+  per port or per differential pair: impedance (from the TDR), insertion
+  loss, return loss and skew. It fails on a violation, and `expect_fail`
+  makes a known-bad board's test pass only when its checks fail.
 * **The openEMS toolchain** (`@hdlf_rules_em//em:toolchain_type`), with one
   tool, `openems`: a runner that solves a simulation script with openEMS
   d686f1d and CSXCAD 626b99f on CPython 3.12. It always runs openEMS's
@@ -87,7 +90,7 @@ common --registry=https://bcr.bazel.build
 `BUILD.bazel`:
 
 ```starlark
-load("@hdlf_rules_em//em:defs.bzl", "kicad_em_model", "kicad_em_sim")
+load("@hdlf_rules_em//em:defs.bzl", "kicad_em_model", "kicad_em_sim", "kicad_em_test")
 
 # The USB pair of a two-layer 1.6 mm board, from the connector to the
 # microcontroller.
@@ -99,13 +102,24 @@ kicad_em_model(
     dielectrics = ["1.51mm 4.5 0.02"],
 )
 
-# Its S-parameters, impedance and TDR, from 100 MHz to 6 GHz. It runs
-# the solver: tag it fdtd.
+# Its S-parameters, impedance and TDR, from 100 MHz to 6 GHz in 100 MHz
+# steps (a grid that starts at its step, which the TDR checks need). It
+# runs the solver: tag it fdtd.
 kicad_em_sim(
     name = "usb_sim",
     model = ":usb_model",
     f_start = "100MHz",
     f_stop = "6GHz",
+    points = 60,
+    tags = ["fdtd"],
+)
+
+# The pair against limits: 90 ohm +-15 % differential, loss, skew.
+kicad_em_test(
+    name = "usb_em_test",
+    size = "small",
+    limits = "usb_limits.json",
+    sim = ":usb_sim",
     tags = ["fdtd"],
 )
 ```

@@ -16,6 +16,7 @@ HelpersInfo = provider(
         "launcher": "FilesToRunProvider: runs a tool with a private home.",
         "swapcheck": "DefaultInfo of the swap test's checker (a target binary).",
         "compare": "DefaultInfo of determinism_test's comparer (a target binary).",
+        "emcheck": "DefaultInfo of kicad_em_test's checker (a target binary).",
     },
 )
 
@@ -24,6 +25,7 @@ def _helpers_toolchain_impl(ctx):
         launcher = ctx.attr.launcher[DefaultInfo].files_to_run,
         swapcheck = ctx.attr.swapcheck[DefaultInfo],
         compare = ctx.attr.compare[DefaultInfo],
+        emcheck = ctx.attr.emcheck[DefaultInfo],
     ), tools = {
         # Tools that rules run in actions through run_tool, built for the
         # execution platform: kicad_em_model's board reader (issue #1).
@@ -32,12 +34,13 @@ def _helpers_toolchain_impl(ctx):
 
 helpers_toolchain = rule(
     implementation = _helpers_toolchain_impl,
-    doc = "The helpers toolchain: the launcher, the swap checker, the determinism comparer " +
-          "and kicad_em_model's board reader.",
+    doc = "The helpers toolchain: the launcher, the swap checker, the determinism comparer, " +
+          "kicad_em_model's board reader and kicad_em_test's checker.",
     attrs = {
         "launcher": attr.label(mandatory = True, executable = True, cfg = "exec"),
         "swapcheck": attr.label(mandatory = True, executable = True, cfg = "target"),
         "compare": attr.label(mandatory = True, executable = True, cfg = "target"),
+        "emcheck": attr.label(mandatory = True, executable = True, cfg = "target"),
         "pcbmodel": attr.label(mandatory = True, executable = True, cfg = "exec"),
     },
 )

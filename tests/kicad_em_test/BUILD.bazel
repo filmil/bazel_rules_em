@@ -1,0 +1,146 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# kicad_em_test (issue #1, step 4). Boards:
+#
+# * the fixture's D+ line over its GND pour (a good line);
+# * the same board without the GND pour (a known-bad board: its ports
+#   have no reference, as on a board with no pour under its USB pair);
+# * the fixture's D+/D- pair, whose D+ is longer by its arc (skew).
+#
+# The solves and the tests that read them are tagged fdtd; the analysis
+# tests are not.
+load("//em:defs.bzl", "kicad_em_model", "kicad_em_sim", "kicad_em_test")
+load("//tests/toolchains:fails_test.bzl", "fails_test")
+
+_PCB = "//em/private/pcbmodel:testdata/pair.kicad_pcb"
+
+kicad_em_model(
+    name = "line",
+    dielectrics = ["1.51mm 4.5 0.02"],
+    nets = [
+        "D+",
+        "GND",
+    ],
+    pcb = _PCB,
+    ports = {
+        "P1": "J1.1",
+        "P2": "R1.2",
+    },
+)
+
+kicad_em_sim(
+    name = "line_sim",
+    air_mm = "3",
+    # The band starts at its step (100 MHz), as the TDR needs.
+    f_start = "100MHz",
+    f_stop = "6GHz",
+    model = ":line",
+    points = 60,
+    steps = 14000,
+    tags = ["fdtd"],
+)
+
+kicad_em_model(
+    name = "no_pour",
+    dielectrics = ["1.51mm 4.5 0.02"],
+    nets = [
+        "D+",
+        "GND",
+    ],
+    pcb = "no_pour.kicad_pcb",
+    ports = {
+        "P1": "J1.1",
+        "P2": "R1.2",
+    },
+)
+
+kicad_em_sim(
+    name = "no_pour_sim",
+    air_mm = "3",
+    # The band starts at its step (100 MHz), as the TDR needs.
+    f_start = "100MHz",
+    f_stop = "6GHz",
+    model = ":no_pour",
+    points = 60,
+    steps = 14000,
+    tags = ["fdtd"],
+)
+
+kicad_em_model(
+    name = "pair",
+    dielectrics = ["1.51mm 4.5 0.02"],
+    nets = [
+        "D+",
+        "D-",
+        "GND",
+    ],
+    pcb = _PCB,
+    ports = {
+        "P1": "J1.1",  # D+ near
+        "P2": "J1.2",  # D- near
+        "P3": "R1.2",  # D+ far
+        "P4": "R1.1",  # D- far
+    },
+)
+
+kicad_em_sim(
+    name = "pair_sim",
+    air_mm = "3",
+    # The band starts at its step (100 MHz), as the TDR needs.
+    f_start = "100MHz",
+    f_stop = "6GHz",
+    model = ":pair",
+    points = 60,
+    steps = 14000,
+    tags = ["fdtd"],
+)
+
+# The good line passes every check of line_limits.json.
+kicad_em_test(
+    name = "line_test",
+    size = "small",
+    limits = "line_limits.json",
+    sim = ":line_sim",
+    tags = ["fdtd"],
+)
+
+# Known-bad: without the GND pour, the same limits must all fail.
+kicad_em_test(
+    name = "no_pour_test",
+    size = "small",
+    expect_fail = [
+        "line_impedance",
+        "line_loss",
+        "line_return",
+    ],
+    limits = "line_limits.json",
+    sim = ":no_pour_sim",
+    tags = ["fdtd"],
+)
+
+# The pair passes its impedance, loss and loose skew limits, and its D+,
+# longer by the arc, must fail the tight skew limit.
+kicad_em_test(
+    name = "pair_test",
+    size = "small",
+    expect_fail = ["pair_skew_tight"],
+    limits = "pair_limits.json",
+    sim = ":pair_sim",
+    tags = ["fdtd"],
+)
+
+# expect_fail names checks by name; a comma would split one.
+kicad_em_test(
+    name = "bad_expect_fail",
+    expect_fail = ["a,b"],
+    limits = "line_limits.json",
+    sim = ":line_sim",
+    tags = ["manual"],
+)
+
+fails_test(
+    name = "bad_expect_fail_test",
+    size = "small",
+    message = "want a check's name",
+    target_under_test = ":bad_expect_fail",
+)

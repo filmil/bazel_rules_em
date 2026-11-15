@@ -10,13 +10,15 @@ load(
     "determinism_test",
     "kicad_em_model",
     "kicad_em_sim",
+    "kicad_em_test",
     "swap_test",
     "tool_toolchain",
 )
 ```
 
-`kicad_em_model` makes a board's nets an openEMS model, and `kicad_em_sim`
-solves it: S-parameters, impedance and TDR. `kicad_em_test` follows, as
+`kicad_em_model` makes a board's nets an openEMS model, `kicad_em_sim`
+solves it (S-parameters, impedance and TDR), and `kicad_em_test` checks the
+results against limits, as
 https://github.com/filmil/bazel_rules_em/issues/1 lays out. This
 file is the only public entry point; everything under `//em/private` may
 change without notice.
@@ -175,6 +177,85 @@ its mesh and `steps` small in tests.
 | <a id="kicad_em_sim-steps"></a>steps |  The time steps of each run, exactly: 100 or more.   | Integer | optional |  `20000`  |
 | <a id="kicad_em_sim-threads"></a>threads |  openEMS's thread count, fixed.   | Integer | optional |  `2`  |
 | <a id="kicad_em_sim-z0"></a>z0 |  The ports' reference impedance, in ohm.   | String | optional |  `"50"`  |
+
+
+<a id="kicad_em_test"></a>
+
+## kicad_em_test
+
+<pre>
+load("@hdlf_rules_em//em:defs.bzl", "kicad_em_test")
+
+kicad_em_test(<a href="#kicad_em_test-name">name</a>, <a href="#kicad_em_test-expect_fail">expect_fail</a>, <a href="#kicad_em_test-limits">limits</a>, <a href="#kicad_em_test-sim">sim</a>)
+</pre>
+
+Checks a kicad_em_sim's S-parameters against limits, and fails on a violation.
+
+```starlark
+kicad_em_test(
+    name = "usb_em_test",
+    size = "small",
+    sim = ":usb_sim",           # kicad_em_sim
+    limits = "usb_limits.json",
+    tags = ["fdtd"],            # it reads a solve
+)
+```
+
+The limits file holds a list of named checks. Ports are the model's port
+names; a pair is (positive, negative) at the same end of the line:
+
+```json
+{"checks": [
+  {"name": "usb_diff_impedance", "kind": "impedance", "pair": ["P1", "P2"],
+   "from_ps": 150, "to_ps": 400, "min_ohm": 76.5, "max_ohm": 103.5},
+  {"name": "dp_impedance", "kind": "impedance", "port": "P1",
+   "from_ps": 150, "to_ps": 400, "min_ohm": 40, "max_ohm": 60},
+  {"name": "usb_loss", "kind": "insertion_loss",
+   "from_pair": ["P1", "P2"], "to_pair": ["P3", "P4"], "up_to": "1GHz", "max_db": 1.0},
+  {"name": "dp_loss", "kind": "insertion_loss", "from": "P1", "to": "P3",
+   "up_to": "1GHz", "max_db": 1.0},
+  {"name": "usb_return", "kind": "return_loss", "pair": ["P1", "P2"],
+   "up_to": "1GHz", "min_db": 10},
+  {"name": "usb_skew", "kind": "skew", "positive": ["P1", "P3"],
+   "negative": ["P2", "P4"], "max_ps": 10}
+]}
+```
+
+* `impedance`: the TDR's impedance, single-ended for a `port`, or
+  differential for a `pair` (from Sdd11, against twice the ports' z0), must
+  stay from `min_ohm` to `max_ohm` from `from_ps` to `to_ps`. The TDR is
+  kicad_em_sim's: a Hann-windowed step over the band, rise about 1 /
+  f_stop, so a feature shorter than that reads closer to the ports'
+  impedance than it is. It needs the band's grid to start at its step
+  (such as f_start 10MHz, f_stop 10GHz, points 1000), and fails otherwise.
+* `insertion_loss`: the loss from `from` to `to` (or Sdd between pairs),
+  at its worst up to `up_to`, must be at most `max_db`.
+* `return_loss`: the loss of the reflection at a `port` (or Sdd11 of a
+  `pair`), at its worst up to `up_to`, must be at least `min_db`.
+* `skew`: the arrivals of a step through the `positive` and `negative`
+  lines, each (near port, far port), at half of its final value, must
+  differ by at most `max_ps`. The first edge arrives before any reflection,
+  so a mismatch at the ports does not bend it, and both lines see the same
+  one. It uses the whole band, and the grid rule of `impedance`.
+
+The test prints a table of each check, what it measured, its limit and
+its result, and writes it as `report.md` in its undeclared outputs.
+
+`expect_fail` names the checks that this board must fail: a known-bad
+board, which proves that the checks catch what they are for. The test then
+fails if one of those passes, or if any other check fails.
+
+The test reads a solve, so tag it `fdtd`, as its kicad_em_sim is.
+
+**ATTRIBUTES**
+
+
+| Name  | Description | Type | Mandatory | Default |
+| :------------- | :------------- | :------------- | :------------- | :------------- |
+| <a id="kicad_em_test-name"></a>name |  A unique name for this target.   | <a href="https://bazel.build/concepts/labels#target-names">Name</a> | required |  |
+| <a id="kicad_em_test-expect_fail"></a>expect_fail |  The checks this board must fail (a known-bad board); empty for a good one.   | List of strings | optional |  `[]`  |
+| <a id="kicad_em_test-limits"></a>limits |  The limits: a JSON file of named checks.   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
+| <a id="kicad_em_test-sim"></a>sim |  The simulation (`kicad_em_sim`).   | <a href="https://bazel.build/concepts/labels">Label</a> | required |  |
 
 
 <a id="tool_toolchain"></a>
