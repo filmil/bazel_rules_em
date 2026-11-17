@@ -6,6 +6,7 @@ bzl_library(
     name = "private",
     srcs = [
         "determinism.bzl",
+        "emtest.bzl",
         "model.bzl",
         "run_tool.bzl",
         "sim.bzl",

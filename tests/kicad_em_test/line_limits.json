@@ -1,0 +1,28 @@
+{
+  "checks": [
+    {
+      "name": "line_impedance",
+      "kind": "impedance",
+      "port": "P1",
+      "from_ps": 80,
+      "to_ps": 160,
+      "min_ohm": 95,
+      "max_ohm": 130
+    },
+    {
+      "name": "line_loss",
+      "kind": "insertion_loss",
+      "from": "P1",
+      "to": "P2",
+      "up_to": "1GHz",
+      "max_db": 2.5
+    },
+    {
+      "name": "line_return",
+      "kind": "return_loss",
+      "port": "P1",
+      "up_to": "300MHz",
+      "min_db": 10
+    }
+  ]
+}

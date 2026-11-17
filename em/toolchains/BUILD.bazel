@@ -27,6 +27,7 @@ config_setting(
 helpers_toolchain(
     name = "helpers_impl",
     compare = "//em/private/detcompare",
+    emcheck = "//em/private/emcheck:cmd",
     launcher = "//em/private/launcher",
     pcbmodel = "//em/private/pcbmodel:cmd",
     swapcheck = "//em/private/swapcheck",
